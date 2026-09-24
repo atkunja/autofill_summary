@@ -3,7 +3,7 @@
   globalThis.__applyPersonally = true;
   const fields = new Map();
   let counter = 0;
-  const visible = el => !el.disabled && !el.readOnly && !el.closest('[inert]') && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  const visible = el => !el.matches(':disabled') && !el.readOnly && !el.closest('[inert]') && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
   const labelText = node => {const copy=node.cloneNode(true);copy.querySelectorAll('input,textarea,select,button').forEach(el=>el.remove());return copy.textContent;};
   const label = el => [Array.from(el.labels || []).map(labelText).join(' '),
     el.getAttribute('aria-label'), (el.getAttribute('aria-labelledby') || '').split(' ').map(id => document.getElementById(id)?.textContent || '').join(' '),
@@ -14,7 +14,7 @@
   function scan() {
     fields.clear();
     return controls().filter(el => visible(el) && (el.tagName !== 'INPUT' || ['text','email','tel','url','file','search'].includes(el.type))).slice(0, 150).map(el => {
-      const id = String(++counter); fields.set(id, {el, label: label(el)});
+      const id = String(++counter); fields.set(id, {el, label: label(el), type: el.type});
       return {id, label: label(el), tag: el.tagName.toLowerCase(), type: el.type, autocomplete: el.autocomplete,
         value: el.type === 'file' ? (el.files[0]?.name || '') : el.value,
         maxLength: el.maxLength > 0 ? el.maxLength : null,
@@ -24,7 +24,7 @@
   function apply(items, resume) {
     return items.map(item => {
       const record = fields.get(item.id); const el = record?.el;
-      if (!el?.isConnected || !visible(el) || label(el) !== record.label) return {id:item.id, ok:false, reason:'Field changed. Scan again.'};
+      if (!el?.isConnected || !visible(el) || label(el) !== record.label || el.type !== record.type) return {id:item.id, ok:false, reason:'Field changed. Scan again.'};
       if (el.type === 'file' ? el.files.length : !!el.value.trim()) return {id:item.id, ok:false, reason:'Already contains a value; left unchanged.'};
       try {
         if (el.type === 'file') {

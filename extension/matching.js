@@ -15,7 +15,7 @@ const rules = [
 const autocomplete = {'given-name':'firstName','family-name':'lastName',name:'fullName',email:'email',tel:'phone','street-address':'address','address-line1':'address','address-line2':'address2','address-level2':'city','address-level1':'state','postal-code':'postalCode','country-name':'country',country:'country',url:'website'};
 export function normalize(s = '') { return s.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
 export function isSensitive(label) {
-  return /\b(gender|sex|race|ethnic|disability|disabled|veteran|citizen|citizenship|visa|sponsor|sponsorship|authorized|authorization|criminal|convict|salary|compensation|ssn|social security|birth|age|religion|consent|agree|password)\b/i.test(label);
+  return /\b(gender|sex|sexual|orientation|pronouns|race|ethnic|ethnicity|nationality|disability|disabled|veteran|citizen|citizenship|visa|sponsor|sponsorship|authorized|authorization|criminal|convict|salary|compensation|ssn|social security|birth|age|religion|consent|agree|password|eligible to work|right to work)\b/i.test(label);
 }
 export function classify(field) {
   const label = normalize(field.label);

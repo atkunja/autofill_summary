@@ -65,5 +65,15 @@ test('AI draft requires explicit selection and credentials stay out of content s
   const privacy=await worker.evaluate(async id=>(await chrome.scripting.executeScript({target:{tabId:id},func:async()=>{
     try {await chrome.storage.local.get('profile');return false;}catch{return true;}
   }}))[0].result,id);expect(privacy).toBe(true);
-  await popup.screenshot({path:'test-results/popup.png'});
+  await popup.evaluate(()=>window.scrollTo(0,0));
+  await popup.screenshot({path:'test-results/popup.png',fullPage:true});
+});
+
+test('does not fill controls whose type changed after scanning',async()=>{
+  const application=await context.newPage();await application.goto(url+'/?types');
+  const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target+'/?types').id,url);
+  const field=await worker.evaluate(async id=>{await chrome.scripting.executeScript({target:{tabId:id},files:['content.js']});return (await chrome.tabs.sendMessage(id,{type:'scan'})).fields.find(f=>f.label==='First name');},id);
+  await application.locator('#first').evaluate(el=>el.type='password');
+  const result=await worker.evaluate(({id,field})=>chrome.tabs.sendMessage(id,{type:'apply',items:[{id:field.id,value:'Alex'}]}),{id,field});
+  expect(result.results[0].ok).toBe(false);await expect(application.locator('#first')).toHaveValue('');
 });
