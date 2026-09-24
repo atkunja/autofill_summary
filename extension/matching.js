@@ -16,12 +16,13 @@ const rules = [
 ];
 const autocomplete = {'given-name':'firstName','family-name':'lastName',name:'fullName',email:'email',tel:'phone','street-address':'address','address-line1':'address','address-line2':'address2','address-level2':'city','address-level1':'state','postal-code':'postalCode','country-name':'country',country:'country',url:'website'};
 export function normalize(s = '') { return s.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+const questionLabel=s=>normalize((s||'').replace(/\s*[\[(](required|optional)[\])]\s*$/i,'')).replace(/^please (enter|provide) (your )?/, '').replace(/^(what is your|your) /,'');
 export function isSensitive(label) {
   return /\b(hispanic|latino|gender|sex|sexual|orientation|pronouns|race|ethnic|ethnicity|nationality|disability|disabled|veteran|citizen|citizenship|visa|sponsor|sponsorship|authorized|authorization|criminal|convict|salary|compensation|ssn|social security|birth|age|religion|consent|agree|password|eligible to work|right to work)\b/i.test(label);
 }
 export function savedFieldKey(field) {
-  const l=normalize(field.label);
-  if (/^(school|university|college)( name)?$/.test(l)) return 'school';
+  const l=questionLabel(field.label);
+  if (/^(school|university|college|school or university|college or university)( name)?$/.test(l)) return 'school';
   if (/^(still student|currently enrolled|are you currently a student)$/.test(l))return 'currentlyStudent';
   if (/^(degree|degree level|degree type|highest degree)$/.test(l)) return 'degree';
   if (/^(discipline|major|field of study|primary major)$/.test(l)) return 'discipline';
@@ -30,7 +31,7 @@ export function savedFieldKey(field) {
   if (/^(education )?end date month$|^(graduation|expected graduation) month$/.test(l)) return 'educationEndMonth';
   if (/^(education )?end date year$|^(graduation|expected graduation) year$/.test(l)) return 'educationEndYear';
   if (/^(are you )?(looking for|seeking|interested in) (a )?(summer )?internship$/.test(l))return 'seekingInternship';
-  if (/^are you (legally )?(authorized|eligible) to work in (the )?(us|u s|united states)$/.test(l))return 'workAuthorizationUS';
+  if (/^are you (legally )?(authorized|eligible) to work in (the )?(us|u s|united states|united states of america)$/.test(l))return 'workAuthorizationUS';
   if (/^requesting visa sponsorship$|^will you .*require sponsorship|^do you (now or in the future )?(need|require) .*sponsorship|^visa sponsorship$/.test(l))return 'sponsorship';
   if (/^(are you )?(at least |age )?18 (years (of age |old )?)?(or older|or over)$|^are you over 18$/.test(l))return 'over18';
   if (/^(age|your age)$/.test(l))return 'age';
@@ -42,7 +43,7 @@ export function savedFieldKey(field) {
   return null;
 }
 export function classify(field) {
-  const label = normalize(field.label);
+  const label = questionLabel(field.label);
   const saved=savedFieldKey(field);
   if(saved)return saved;
   if (isSensitive(label)) return null;
@@ -58,6 +59,7 @@ export function equivalent(a,b,key) {
   const clean=value=>normalize(String(value)).replace(/\s+degree$/,'');
   let left=clean(a),right=clean(b);
   if(left===right)return true;
+  if(key==='country'){const country=value=>/^(us|u s|usa|u s a|united states|united states of america)$/.test(value)?'us':value;return country(left)===country(right);}
   if(key==='degree') {
     const degree=value=>/^(bachelor|bachelors|bachelor s|b s|bs|bse|b s e|bachelor of science|bachelor of science in engineering)$/.test(value)?'bachelor':/^(master|masters|master s|m s|ms|master of science)$/.test(value)?'master':value;
     return degree(left)===degree(right);
@@ -80,7 +82,7 @@ export function suggestion(field, profile) {
   const education=inferEducation(profile.background);
   let value=key==='fullName'?[profile.firstName,profile.lastName].filter(Boolean).join(' '):profile[key] || education[key] || '';
   if(key==='graduationCutoff') {
-    const match=normalize(field.label).match(/(before|by) ([a-z]+) (20\d{2})$/);
+    const match=questionLabel(field.label).match(/(before|by) ([a-z]+) (20\d{2})$/);
     const month=monthNames.findIndex(m=>normalize(m)===normalize(profile.educationEndMonth || education.educationEndMonth || ''));
     const cutoff=monthNames.findIndex(m=>normalize(m)===match?.[2]);
     const year=Number(profile.educationEndYear || education.educationEndYear);
