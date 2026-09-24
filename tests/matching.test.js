@@ -40,3 +40,12 @@ test('common label variations map consistently without guessing disclosures',()=
  assert.equal(suggestion({label:'Country (optional)',options:[{value:'country-1',label:'United States'}]},{country:'USA'}),'country-1');
  assert.equal(suggestion({label:'Your gender (optional)'},{}),'');
 });
+
+test('relocation questions and camel-case consent do not become contact suggestions',()=>{
+ const profile={city:'Ann Arbor',phone:'5551234567',email:'example@example.test'};
+ for(const label of ['Are you currently located in, or willing to relocate to, the Greater New York City area and work from our NYC office for the duration of the internship?','Would you relocate to this city?','Can we contact you by phone?','communicationConsent']){
+  assert.equal(classify({label}),null);assert.equal(suggestion({label},profile),'');
+ }
+ assert.equal(canDraft({label:'communicationConsent',tag:'textarea'}),false);
+ assert.equal(suggestion({label:'City'},profile),'Ann Arbor');
+});

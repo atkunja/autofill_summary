@@ -18,7 +18,7 @@ const autocomplete = {'given-name':'firstName','family-name':'lastName',name:'fu
 export function normalize(s = '') { return s.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
 const questionLabel=s=>normalize((s||'').replace(/\s*[\[(](required|optional)[\])]\s*$/i,'')).replace(/^please (enter|provide) (your )?/, '').replace(/^(what is your|your) /,'');
 export function isSensitive(label) {
-  return /\b(hispanic|latino|gender|sex|sexual|orientation|pronouns|race|ethnic|ethnicity|nationality|disability|disabled|veteran|citizen|citizenship|visa|sponsor|sponsorship|authorized|authorization|criminal|convict|salary|compensation|ssn|social security|birth|age|religion|consent|agree|password|eligible to work|right to work)\b/i.test(label);
+  return /\b(hispanic|latino|gender|sex|sexual|orientation|pronouns|race|ethnic|ethnicity|nationality|disability|disabled|veteran|citizen|citizenship|visa|sponsor|sponsorship|authorized|authorization|criminal|convict|salary|compensation|ssn|social security|birth|age|religion|consent|agree|password|eligible to work|right to work)\b/i.test(normalize(label));
 }
 export function savedFieldKey(field) {
   const l=questionLabel(field.label);
@@ -47,6 +47,8 @@ export function classify(field) {
   const saved=savedFieldKey(field);
   if(saved)return saved;
   if (isSensitive(label)) return null;
+  // Eligibility and preference questions must not match incidental contact words.
+  if (/^(are|do|does|will|would|can|have|willing)\b/.test(label))return null;
   if (field.type === 'file') return /\b(resume|cv|curriculum vitae)\b/.test(label) ? 'resume' : null;
   if (/git ?hub/.test(label)) return 'github';
   if (/linked ?in/.test(label)) return 'linkedin';

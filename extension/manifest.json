@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Apply, personally",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Your details, your voice. Review job application autofills and optional AI drafts.",
   "minimum_chrome_version": "119",
   "permissions": [
