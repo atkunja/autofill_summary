@@ -9,7 +9,7 @@ test.beforeAll(async()=>{
   const ext=path.join(temp,'extension');await cp('extension',ext,{recursive:true});
   const manifest=JSON.parse(await readFile(path.join(ext,'manifest.json'),'utf8'));
   // Test-only localhost permission substitutes for clicking Chrome's toolbar action.
-  manifest.host_permissions.push('http://127.0.0.1/*');await writeFile(path.join(ext,'manifest.json'),JSON.stringify(manifest));
+  manifest.host_permissions.push('http://127.0.0.1/*','https://example.com/*');await writeFile(path.join(ext,'manifest.json'),JSON.stringify(manifest));
   server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end(`<!doctype html><title>Example application</title><form><label>First name<input id="first" autocomplete="given-name"></label><label>Email<input id="email" type="email" value="existing@example.test"></label><label>State<select id="state"><option value="">Choose</option><option value="MI">Michigan</option></select></label><label>Resume<input id="resume" type="file" accept=".txt"></label><label>Why this company?<textarea id="why"></textarea></label><label>Gender<textarea id="gender"></textarea></label><input id="hidden" style="display:none"><button type="submit">Submit application</button></form><script>window.submitted=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submitted=true};</script>`);});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));url=`http://127.0.0.1:${server.address().port}`;
   context=await chromium.launchPersistentContext(path.join(temp,'profile'),{channel:'chromium',headless:true,args:[`--disable-extensions-except=${ext}`,`--load-extension=${ext}`]});
@@ -76,4 +76,58 @@ test('does not fill controls whose type changed after scanning',async()=>{
   await application.locator('#first').evaluate(el=>el.type='password');
   const result=await worker.evaluate(({id,field})=>chrome.tabs.sendMessage(id,{type:'apply',items:[{id:field.id,value:'Alex'}]}),{id,field});
   expect(result.results[0].ok).toBe(false);await expect(application.locator('#first')).toHaveValue('');
+});
+
+test('imports private context without replacing API key and persists project edits',async()=>{
+  const options=await context.newPage();await options.goto(`chrome-extension://${extensionId}/options.html`);
+  await worker.evaluate(async()=>{await chrome.storage.session.set({apiKey:'preserve-test-key'});globalThis.fetch=async(url,options)=>{globalThis.lastRequest=JSON.parse(options.body);return {ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:'Test answer.'}]}]})};};});
+  options.on('dialog',dialog=>dialog.accept());
+  await options.locator('#profileImport').setInputFiles({name:'profile.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({version:1,apiKey:'never-import-this',profile:{github:'https://github.com/example',background:'Example engineer',projects:[{title:'Example project',url:'https://example.com',notes:'Built API',sourceText:'An example project.'}]}}))});
+  await expect(options.locator('#status')).toContainText('Import ready');
+  await expect(options.getByLabel('GitHub URL')).toHaveValue('https://github.com/example');
+  await options.getByRole('button',{name:'Save profile',exact:true}).click();await expect(options.locator('#status')).toContainText('Profile saved');
+  await options.reload();await expect(options.getByLabel('Project name',{exact:true})).toHaveValue('Example project');
+  expect(await worker.evaluate(async()=>(await chrome.storage.session.get('apiKey')).apiKey)).toBe('preserve-test-key');
+  await options.getByLabel('Include in AI answers').uncheck();await options.getByRole('button',{name:'Save profile',exact:true}).click();await expect(options.locator('#status')).toContainText('Profile saved');
+  const result=await options.evaluate(()=>chrome.runtime.sendMessage({type:'draft',args:{question:'Why this role?'}}));expect(result.answer).toBeTruthy();
+  expect(JSON.parse((await worker.evaluate(()=>globalThis.lastRequest)).input).projects).toHaveLength(0);
+});
+
+function examplePDF(){
+  const stream='BT /F1 12 Tf 50 750 Td (Example Engineer - Built reliable APIs) Tj ET';
+  const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`];
+  let pdf='%PDF-1.4\n';const offsets=[0];objects.forEach((obj,i)=>{offsets.push(pdf.length);pdf+=`${i+1} 0 obj\n${obj}\nendobj\n`;});
+  const xref=pdf.length;pdf+=`xref\n0 6\n0000000000 65535 f \n`+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(pdf);
+}
+test('extracts PDF resume text locally under extension CSP',async()=>{
+  const options=await context.newPage();await options.goto(`chrome-extension://${extensionId}/options.html`);
+  options.on('dialog',dialog=>dialog.accept());
+  const remoteRequests=[];options.on('request',req=>{if(req.url().startsWith('https:'))remoteRequests.push(req.url());});
+  await options.locator('#resume').setInputFiles({name:'resume.pdf',mimeType:'application/pdf',buffer:examplePDF()});
+  await options.getByRole('button',{name:'Extract resume text'}).click();
+  await expect(options.locator('#status')).toContainText('Resume text extracted locally');
+  expect(await options.locator('#background').inputValue()).toContain('Example Engineer - Built reliable APIs');
+  expect(remoteRequests).toEqual([]);
+});
+test('project source extraction drops scripts and renders fetched text as plain text',async()=>{
+  const options=await context.newPage();await options.goto(`chrome-extension://${extensionId}/options.html`);
+  const result=await options.evaluate(async()=>{
+    const {extractSource}=await import('./projects.js');
+    return extractSource('<main><h1>Example</h1><p>A project that helps engineers build reliable APIs and manage repeatable workloads.</p><script>maliciousInstruction()</script></main><nav>Unrelated navigation</nav>');
+  });
+  expect(result.text).toContain('reliable APIs');expect(result.text).not.toContain('maliciousInstruction');expect(result.text).not.toContain('Unrelated');
+});
+
+test('reading a project link updates reviewable source text and saves it',async()=>{
+  await worker.evaluate(()=>chrome.storage.local.set({profile:{projects:[{title:'Example',url:'https://example.com',notes:'Built APIs'}]}}));
+  const options=await context.newPage();await options.goto(`chrome-extension://${extensionId}/options.html`);
+  await options.route('https://example.com/**',route=>route.fulfill({contentType:'text/html',body:'<main><h1>Example project</h1><p>Built for engineers who need reliable API workflows and repeatable automation.</p></main>'}));
+  await options.getByRole('button',{name:'Read project link'}).click();
+  await expect(options.locator('.project-card .hint')).toContainText('Review source text');
+  await options.getByRole('button',{name:'Save profile',exact:true}).click();await expect(options.locator('#status')).toContainText('Profile saved');
+  await options.reload();await options.locator('.project-card summary').click();
+  expect(await options.getByLabel('Imported source text (editable)').inputValue()).toContain('reliable API workflows');
+  await options.getByLabel('Project link (website or GitHub repository)').fill('https://example.com/other');
+  expect(await options.getByLabel('Imported source text (editable)').inputValue()).toBe('');
 });
