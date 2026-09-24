@@ -97,3 +97,7 @@ The extension runs plain JavaScript with a locally bundled PDF.js dependency (Ap
 Browser tests use an isolated temporary Chrome profile and add **localhost and example.com fixture permissions to a temporary extension copy** to substitute for the physical toolbar click. The shipped manifest does not contain those required fixture permissions. PDF extraction and project source editing are also covered. AI responses are mocked: automated tests do not spend API credits or submit real applications. Live OpenAI credentials and real ATS sites must be checked manually by the user.
 
 GitHub Actions runs the same checks and uploads an extension ZIP. To install that artifact, unzip it and load the folder containing `manifest.json`.
+
+### Reliability improvements
+
+New PDF/TXT uploads prepare resume text and recognized education when experience text is empty; review and Save profile to apply. The application panel now counts filled, selected, and attention-needed detected fields. See [the prioritized reliability review](docs/AUTOFILL-IMPROVEMENTS.md) for remaining work and acceptance criteria.

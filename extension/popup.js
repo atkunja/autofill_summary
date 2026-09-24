@@ -5,6 +5,11 @@ let tabId, pageUrl, rows=[], resume;
 const status=text=>$('status').textContent=text;
 $('profile').onclick=()=>chrome.runtime.openOptionsPage();
 function make(tag, text) {const el=document.createElement(tag);if(text)el.textContent=text;return el;}
+function updateCoverage(){
+  const complete=rows.filter(r=>r.field.value || r.filled).length;
+  const ready=rows.filter(r=>!r.field.value&&!r.filled&&!r.check.disabled&&r.check.checked).length;
+  $('coverage').textContent=rows.length?`${complete} already filled · ${ready} selected · ${rows.length-complete-ready} need attention (${rows.length} detected fields)` : '';
+}
 function render(field, profile) {
   const card=make('div');card.className='field';
   const label=make('label'), check=make('input');check.type='checkbox';
@@ -38,17 +43,17 @@ function render(field, profile) {
           const result=await chrome.runtime.sendMessage({type:'draft',args:{question:field.label,context:$('context').value,maxLength:field.maxLength}});
           if(!result)throw Error('Could not reach the extension. Reload it and try again.');
           if(result.error)throw Error(result.error);
-          editor.value=result.answer;check.checked=false;
+          editor.value=result.answer;check.checked=false;updateCoverage();
           status('Draft ready. Edit it, then select its checkbox to approve filling.' + (field.maxLength && result.answer.length>field.maxLength?' Shorten it to fit the character limit.':''));
         }catch(error){status(error.message);}finally{button.disabled=false;}
       };
       const actions=make('div');actions.className='actions';actions.append(button);card.append(actions);
     }
   }
-  $('fields').append(card);rows.push({field,check,editor,kind,profile});
+  $('fields').append(card);rows.push({field,check,editor,kind,profile});check.addEventListener('change',updateCoverage);
 }
 $('scan').onclick=async()=>{
-  $('scan').disabled=true;rows=[];$('fields').replaceChildren();$('fill').hidden=true;
+  $('scan').disabled=true;rows=[];updateCoverage();$('fields').replaceChildren();$('fill').hidden=true;
   try {
     const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
     if(!tab?.id || !/^https?:/.test(tab.url || ''))throw Error('Open an http(s) job application page first. Chrome internal pages cannot be filled.');
@@ -61,7 +66,7 @@ $('scan').onclick=async()=>{
     const profile=saved.profile || {};
     const contextMissing=saved.resume && !profile.background?.trim() && !profile.school;
     for(const field of result.fields)render(field,profile);
-    $('fill').hidden=!rows.length;
+    updateCoverage();$('fill').hidden=!rows.length;
     status((rows.length?'Review the suggestions below. Select only the fields you want to fill.':'No supported fields found. Open the application form, then scan again. Embedded forms and custom widgets may need manual entry.') + (contextMissing?'\nYour resume is attached, but its text and education are not saved. In Profile, extract the resume text or import your prepared profile, then Save profile and rescan.':'') + (result.warnings.length?'\n'+result.warnings.join('\n'):''));
   } catch(error){status(error.message);}finally{$('scan').disabled=false;}
 };
@@ -76,7 +81,8 @@ $('fill').onclick=async()=>{
     const result=await fillApplication(tabId,items,resume);
     if(result.error)throw Error(result.error);
     const successes=result.results.filter(r=>r.ok);
-    for(const r of rows)if(successes.some(s=>s.id===r.field.id)){r.check.checked=false;r.check.disabled=true;if(r.editor){r.editor.disabled=true;const chosen=successes.find(s=>s.id===r.field.id)?.selectedValue;if(chosen)r.editor.value=chosen;}}
+    for(const r of rows)if(successes.some(s=>s.id===r.field.id)){r.filled=true;r.check.checked=false;r.check.disabled=true;if(r.editor){r.editor.disabled=true;const chosen=successes.find(s=>s.id===r.field.id)?.selectedValue;if(chosen)r.editor.value=chosen;}}
+    updateCoverage();
     status(`Filled ${successes.length} of ${items.length} selected fields. Review the application before submitting.` + result.results.filter(r=>!r.ok).map(r=>`\n${rows.find(row=>row.field.id===r.id)?.field.label}: ${r.reason}`).join(''));
   }catch(error){status(error.message);}finally{$('fill').disabled=false;$('scan').disabled=false;}
 };
