@@ -31,3 +31,12 @@ test('handles output, quota, refusals, and incomplete responses',async()=>{
   await assert.rejects(draftAnswer(args,'test',mock({output:[]})),/no draft/);
   await assert.rejects(draftAnswer(args,''),/API key/);
 });
+
+test('common label variations map consistently without guessing disclosures',()=>{
+ for(const label of ['Full name (required)','Your full legal name','Please enter your full name','Please provide your name'])assert.equal(suggestion({label},{firstName:'Alex',lastName:'Example'}),'Alex Example');
+ assert.equal(suggestion({label:'What is your school or university?'},{school:'Example University'}),'Example University');
+ assert.equal(suggestion({label:'Are you legally authorized to work in the United States of America?'},{workAuthorizationUS:'Yes'}),'Yes');
+ assert.equal(suggestion({label:'Are you authorized to work in Canada?'},{workAuthorizationUS:'Yes'}),'');
+ assert.equal(suggestion({label:'Country (optional)',options:[{value:'country-1',label:'United States'}]},{country:'USA'}),'country-1');
+ assert.equal(suggestion({label:'Your gender (optional)'},{}),'');
+});

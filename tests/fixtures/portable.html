@@ -1,0 +1,17 @@
+<!doctype html><title>Portable application controls</title>
+<form>
+<div><label>School</label><div><input id="school"></div></div>
+<div><label for="country">Country</label><button id="country" role="combobox" aria-expanded="false" aria-controls="countries">Select one</button><div id="countries" role="listbox" hidden><button role="option" aria-disabled="true">Canada</button><button role="option">United States</button></div></div>
+<div role="radiogroup" aria-labelledby="auth-label"><p id="auth-label">Are you authorized to work in the US?</p><button role="radio" aria-checked="false">Yes</button><button role="radio" aria-checked="false">No</button></div>
+<div id="shadow"></div><label>Email<input id="email" type="email" value="existing@example.test"></label>
+<label><input type="checkbox" id="consent">Agree to terms</label><button type="button" id="next">Next step</button><button>Submit application</button>
+</form>
+<script>
+window.submitted=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submitted=true;};
+const country=document.getElementById('country'),menu=document.getElementById('countries');
+country.onclick=()=>{menu.hidden=false;country.setAttribute('aria-expanded','true');};
+for(const option of menu.children)option.onclick=()=>{if(option.getAttribute('aria-disabled')==='true')return;country.textContent=option.textContent;country.setAttribute('aria-expanded','false');menu.hidden=true;};
+for(const radio of document.querySelectorAll('[role=radio]'))radio.onclick=()=>{for(const r of document.querySelectorAll('[role=radio]'))r.setAttribute('aria-checked',String(r===radio));};
+document.getElementById('shadow').attachShadow({mode:'open'}).innerHTML='<label>First name<input id="shadow-first"></label>';
+document.getElementById('next').onclick=()=>{document.querySelector('form').innerHTML='<label>Last name<input id="last"></label><button>Submit application</button>';};
+</script>

@@ -13,7 +13,8 @@ test.beforeAll(async()=>{
   manifest.host_permissions.push('http://127.0.0.1/*','https://example.com/*');await writeFile(path.join(ext,'manifest.json'),JSON.stringify(manifest));
   const fixtureBundle=(await build({entryPoints:['tests/fixtures/greenhouse.jsx'],bundle:true,write:false,format:'iife'})).outputFiles[0].text;
   const ashbyBundle=(await build({entryPoints:['tests/fixtures/ashby.jsx'],bundle:true,write:false,format:'iife'})).outputFiles[0].text;
-  server=http.createServer((req,res)=>{if(req.url==='/ashby.js'){res.setHeader('Content-Type','text/javascript');res.end(ashbyBundle);return;}if(req.url.startsWith('/ashby')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Ashby fixture</title><div id="root"></div><script src="/ashby.js"></script>');return;}if(req.url==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(fixtureBundle);return;}if(req.url.startsWith('/greenhouse')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Greenhouse fixture</title><div id="root"></div><script src="/fixture.js"></script>');return;}res.setHeader('Content-Type','text/html');res.end(`<!doctype html><title>Example application</title><form><label>First name<input id="first" autocomplete="given-name"></label><label>Email<input id="email" type="email" value="existing@example.test"></label><label>State<select id="state"><option value="">Choose</option><option value="MI">Michigan</option></select></label><label>Resume<input id="resume" type="file" accept=".txt"></label><label>Why this company?<textarea id="why"></textarea></label><label>Gender<textarea id="gender"></textarea></label><input id="hidden" style="display:none"><button type="submit">Submit application</button></form><script>window.submitted=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submitted=true};</script>`);});
+  const portableFixture=await readFile('tests/fixtures/portable.html','utf8');
+  server=http.createServer((req,res)=>{if(req.url.startsWith('/portable')){res.setHeader('Content-Type','text/html');res.end(portableFixture);return;}if(req.url==='/blocked-embed'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Blocked embed</title><label>First name<input></label><iframe src="https://blocked.test/application"></iframe>');return;}if(req.url==='/embedded'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Embedded application</title><iframe src="/portable?one"></iframe><iframe src="/portable?two"></iframe>');return;}if(req.url==='/ashby.js'){res.setHeader('Content-Type','text/javascript');res.end(ashbyBundle);return;}if(req.url.startsWith('/ashby')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Ashby fixture</title><div id="root"></div><script src="/ashby.js"></script>');return;}if(req.url==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(fixtureBundle);return;}if(req.url.startsWith('/greenhouse')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Greenhouse fixture</title><div id="root"></div><script src="/fixture.js"></script>');return;}res.setHeader('Content-Type','text/html');res.end(`<!doctype html><title>Example application</title><form><label>First name<input id="first" autocomplete="given-name"></label><label>Email<input id="email" type="email" value="existing@example.test"></label><label>State<select id="state"><option value="">Choose</option><option value="MI">Michigan</option></select></label><label>Resume<input id="resume" type="file" accept=".txt"></label><label>Why this company?<textarea id="why"></textarea></label><label>Gender<textarea id="gender"></textarea></label><input id="hidden" style="display:none"><button type="submit">Submit application</button></form><script>window.submitted=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submitted=true};</script>`);});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));url=`http://127.0.0.1:${server.address().port}`;
   context=await chromium.launchPersistentContext(path.join(temp,'profile'),{channel:'chromium',headless:true,args:[`--disable-extensions-except=${ext}`,`--load-extension=${ext}`]});
   worker=context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');extensionId=new URL(worker.url()).host;
@@ -198,4 +199,69 @@ test('Ashby nested education, canonical school options and answer buttons fill t
   await popup.getByRole('button',{name:'Scan this application'}).click();
   await expect(popup.getByLabel('Value for School',{exact:true})).toBeDisabled();
   await expect(popup.getByLabel('Value for Requesting visa sponsorship?')).toBeDisabled();
+});
+
+test('portable ARIA controls, nearby labels, shadow fields and new steps work without a site adapter',async()=>{
+  await worker.evaluate(()=>chrome.storage.local.set({profile:{firstName:'Alex',lastName:'Example',school:'Example University',country:'United States',workAuthorizationUS:'Yes'},resume:null}));
+  const application=await context.newPage();await application.goto(url+'/portable');
+  const popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target+'/portable').id,url);
+  await worker.evaluate(id=>chrome.tabs.update(id,{active:true}),id);
+  await popup.getByRole('button',{name:'Scan this application'}).click();
+  await expect(popup.getByLabel('Value for School',{exact:true})).toHaveValue('Example University');
+  await popup.getByRole('button',{name:'Fill selected fields'}).click();
+  await expect(popup.locator('#status')).toContainText('Filled 4 of 4');
+  await expect(application.locator('#school')).toHaveValue('Example University');
+  await expect(application.locator('#country')).toHaveText('United States');
+  await expect(application.getByRole('radio',{name:'Yes',exact:true})).toHaveAttribute('aria-checked','true');
+  await expect(application.locator('#shadow-first')).toHaveValue('Alex');
+  await expect(application.locator('#email')).toHaveValue('existing@example.test');
+  await expect(application.locator('#consent')).not.toBeChecked();
+  expect(await application.evaluate(()=>window.submitted)).toBe(false);
+  await popup.getByRole('button',{name:'Scan this application'}).click();
+  await expect(popup.getByLabel('Value for Country',{exact:true})).toBeDisabled();
+  await expect(popup.getByLabel('Value for Are you authorized to work in the US?')).toBeDisabled();
+  await application.locator('#next').click();
+  await popup.getByRole('button',{name:'Scan this application'}).click();
+  await popup.getByRole('button',{name:'Fill selected fields'}).click();
+  await expect(application.locator('#last')).toHaveValue('Example');
+});
+
+test('embedded previews route to each document and reject a navigated frame',async()=>{
+  const application=await context.newPage();await application.goto(url+'/embedded');
+  const popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target+'/embedded').id,url);
+  await worker.evaluate(id=>chrome.tabs.update(id,{active:true}),id);
+  await popup.getByRole('button',{name:'Scan this application'}).click();
+  await expect(popup.getByLabel('Value for School',{exact:true})).toHaveCount(2);
+  const frames=application.frames().filter(f=>f.url().includes('/portable'));
+  await frames[0].goto(url+'/portable?navigated');
+  await popup.getByRole('button',{name:'Fill selected fields'}).click();
+  await expect(popup.locator('#status')).toContainText('Filled 4 of 8');
+  await expect(popup.locator('#status')).toContainText('frame changed');
+  await expect(frames[0].locator('#school')).toHaveValue('');
+  await expect(frames[1].locator('#school')).toHaveValue('Example University');
+});
+
+test('inaccessible embedded content is reported while the main form still fills',async()=>{
+  await context.route('https://blocked.test/application',route=>route.fulfill({contentType:'text/html',body:'<label>Last name<input></label>'}));
+  const application=await context.newPage();await application.goto(url+'/blocked-embed');
+  const popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target+'/blocked-embed').id,url);
+  await worker.evaluate(id=>chrome.tabs.update(id,{active:true}),id);
+  await popup.getByRole('button',{name:'Scan this application'}).click();
+  await expect(popup.locator('#status')).toContainText('embedded content may be inaccessible');
+  await popup.getByRole('button',{name:'Fill selected fields'}).click();
+  await expect(application.getByLabel('First name')).toHaveValue('Alex');
+  await expect(application.frameLocator('iframe').getByLabel('Last name')).toHaveValue('');
+});
+
+test('changed custom control roles are rejected before any click',async()=>{
+  const application=await context.newPage();await application.goto(url+'/portable?changed');
+  const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target+'/portable?changed').id,url);
+  const field=await worker.evaluate(async id=>{await chrome.scripting.executeScript({target:{tabId:id},files:['content.js']});return (await chrome.tabs.sendMessage(id,{type:'scan'})).fields.find(f=>f.label==='Country');},id);
+  await application.locator('#country').evaluate(el=>{el.removeAttribute('role');el.onclick=()=>{window.clickedChangedControl=true;};});
+  const result=await worker.evaluate(({id,field})=>chrome.tabs.sendMessage(id,{type:'apply',items:[{id:field.id,value:'United States'}]}),{id,field});
+  expect(result.results[0].ok).toBe(false);
+  expect(await application.evaluate(()=>!!window.clickedChangedControl)).toBe(false);
 });

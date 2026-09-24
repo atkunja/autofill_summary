@@ -2,7 +2,7 @@
   // Replace old listeners when an updated extension is injected without reloading the form.
   if (globalThis.__applyPersonally?.listener) chrome.runtime.onMessage.removeListener(globalThis.__applyPersonally.listener);
   const fields=new Map();let busy=false;
-  const visible=el=>!el.matches(':disabled')&&!el.readOnly&&!el.closest('[inert]')&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
+  const visible=el=>!el.matches(':disabled,[aria-disabled="true"],[aria-readonly="true"]')&&!el.readOnly&&!el.closest('[inert]')&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
   const norm=s=>String(s || '').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   const labelText=node=>{const copy=node.cloneNode(true);copy.querySelectorAll('input,textarea,select,button').forEach(el=>el.remove());return copy.textContent;};
   // Ashby visually labels nested controls without associating the label with the input.
@@ -18,21 +18,38 @@
     }
     return '';
   }
-  const label=el=>[Array.from(el.labels || []).map(labelText).join(' '),el.getAttribute('aria-label'),(el.getAttribute('aria-labelledby') || '').split(' ').map(id=>el.getRootNode().getElementById?.(id)?.textContent || '').join(' '),ashbyLabel(el),el.placeholder,el.name,el.id].find(s=>s?.trim())?.trim().slice(0,500) || 'Unlabeled field';
+  const controlSelector='input,textarea,select,[role="combobox"],button[aria-haspopup="listbox"],[role="radiogroup"],.ashby-application-form-input-yesno';
+  const isCombo=el=>el.matches('[role="combobox"],button[aria-haspopup="listbox"]');
+  const ariaRadios=el=>el.getAttribute('role')==='radiogroup'&&!el.querySelector('input[type="radio"]');
+  const radioOptions=el=>[...el.querySelectorAll('[role="radio"]')].filter(r=>r.closest('[role="radiogroup"]')===el);
+  function nearbyLabel(el){
+    // Use an unassociated nearby label only when it describes a single logical control.
+    for(let parent=el.parentElement,depth=0;parent&&depth<3;parent=parent.parentElement,depth++){
+      const peers=[...parent.querySelectorAll(controlSelector)].filter(c=>c!==el&&!el.contains(c)&&!c.contains(el)&&!c.matches('input[type="hidden"]'));
+      if(peers.length)break;
+      const titles=[...parent.querySelectorAll(':scope > label,:scope > legend')].filter(t=>!t.htmlFor||t.htmlFor===el.id);
+      if(titles.length===1)return labelText(titles[0]);
+    }
+    return '';
+  }
+  const label=el=>[Array.from(el.labels || []).map(labelText).join(' '),el.getAttribute('aria-label'),(el.getAttribute('aria-labelledby') || '').split(' ').map(id=>el.getRootNode().getElementById?.(id)?.textContent || '').join(' '),ashbyLabel(el),nearbyLabel(el),el.placeholder,el.name,el.id].find(s=>s?.trim())?.trim().slice(0,500) || 'Unlabeled field';
   const comboRoot=el=>el.closest('.select__control,[class$="-control"]');
   const selected=el=>{
     if(el.matches('.ashby-application-form-input-yesno'))return el.querySelector('button[aria-pressed="true"]')?.dataset.option || '';
+    if(ariaRadios(el))return radioOptions(el).find(r=>r.getAttribute('aria-checked')==='true')?.textContent.trim() || '';
     if(el.type==='checkbox')return el.checked?'Yes':'';
-    if(el.getAttribute('role')!=='combobox')return el.type==='file'?(el.files[0]?.name || ''):el.value || '';
+    if(!isCombo(el))return el.type==='file'?(el.files[0]?.name || ''):el.value || '';
     const text=comboRoot(el)?.querySelector('.select__single-value,[class*="-singleValue"]')?.textContent || el.getAttribute('aria-valuetext');
     if(text)return text.trim();
-    return el.value || '';
+    if(el instanceof HTMLInputElement)return el.value || '';
+    const textValue=el.textContent.trim();
+    return /^(select|choose)( (one|an? option))?(\.\.\.)?$/i.test(textValue)||textValue===el.getAttribute('aria-placeholder')?'':textValue;
   };
-  function controls(root=document){return [...root.querySelectorAll('input,textarea,select,[role="combobox"],.ashby-application-form-input-yesno'),...[...root.querySelectorAll('*')].filter(el=>el.shadowRoot).flatMap(el=>controls(el.shadowRoot))];}
+  function controls(root=document){return [...root.querySelectorAll(controlSelector),...[...root.querySelectorAll('*')].filter(el=>el.shadowRoot).flatMap(el=>controls(el.shadowRoot))];}
   function scan(){
     if(busy)throw Error('A fill is still running. Wait before scanning again.');
     fields.clear();const seenRadios=new Set();const result=[];
-    for(const el of [...new Set(controls())].filter(el=>visible(el)&&!el.closest('.ashby-application-form-autofill-input-root')&&(el.tagName!=='INPUT'||['text','email','tel','url','file','search','number','date','month','radio'].includes(el.type)||(el.type==='checkbox'&&el.id==='_systemfield_education_history-isCurrent'))).slice(0,150)){
+    for(const el of [...new Set(controls())].filter(el=>visible(el)&&!el.closest('.ashby-application-form-autofill-input-root')&&!(el.getAttribute('role')==='radiogroup'&&!ariaRadios(el))&&(el.tagName!=='INPUT'||['text','email','tel','url','file','search','number','date','month','radio'].includes(el.type)||(el.type==='checkbox'&&el.id==='_systemfield_education_history-isCurrent'))).slice(0,150)){
       let group,question=label(el),options=el.tagName==='SELECT'?[...el.options].map(o=>({value:o.value,label:o.text,disabled:o.disabled})):null;
       if(el.type==='radio'){
         if(seenRadios.has(el))continue;
@@ -42,20 +59,26 @@
         options=group.map(r=>({value:r.value,label:label(r),disabled:r.disabled}));
       }
       if(el.matches('.ashby-application-form-input-yesno'))options=[...el.querySelectorAll('button[data-option]')].map(b=>({value:b.dataset.option,label:b.textContent,disabled:b.disabled}));
+      if(ariaRadios(el))options=radioOptions(el).map(r=>({value:r.textContent.trim(),label:r.textContent.trim(),disabled:!visible(r)}));
       if(el.type==='checkbox')options=[{value:'Yes',label:'Yes'},{value:'No',label:'No'}];
-      const id=crypto.randomUUID(), control=el.matches('.ashby-application-form-input-yesno')?'yesno':el.type==='checkbox'?'checkbox':el.getAttribute('role')==='combobox'?'combobox':el.type==='radio'?'radio':'native';
-      fields.set(id,{el,label:label(el),type:el.type,group,control});
+      const id=crypto.randomUUID(), control=ariaRadios(el)?'aria-radio':el.matches('.ashby-application-form-input-yesno')?'yesno':el.type==='checkbox'?'checkbox':isCombo(el)?'combobox':el.type==='radio'?'radio':'native';
+      fields.set(id,{el,label:label(el),type:el.type,role:el.getAttribute('role'),hasPopup:el.getAttribute('aria-haspopup'),group,control});
       result.push({id,label:question.trim(),tag:el.tagName.toLowerCase(),type:el.type,control,autocomplete:el.autocomplete,value:group?(group.find(r=>r.checked)?.value || ''):selected(el),maxLength:el.maxLength>0?el.maxLength:null,options});
     }
     return result;
   }
   function setValue(el,value){const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:el.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}
   function key(el,key,code){el.dispatchEvent(new KeyboardEvent('keydown',{key,code:key,keyCode:code,which:code,bubbles:true}));}
+  function clickAnswer(el){
+    const blockSubmit=event=>{event.preventDefault();event.stopImmediatePropagation();};
+    document.addEventListener('submit',blockSubmit,true);
+    try{el.click();}finally{document.removeEventListener('submit',blockSubmit,true);}
+  }
   const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   async function fillCombo(el,value){
     const original=selected(el);let committed=false;
     if(original)throw Error('Already contains a value; left unchanged.');
-    el.focus();el.click();
+    el.focus();clickAnswer(el);
     if(el instanceof HTMLInputElement)setValue(el,value);
     key(el,'ArrowDown',40);
     try{
@@ -73,12 +96,12 @@
         await pause(80);
       }
       if(!match)throw Error('No exact dropdown option found. Adjust the saved answer or select manually.');
-      match.click();
+      clickAnswer(match);
       for(let i=0;i<20;i++){
         await pause(50);
         const text=comboRoot(el)?.querySelector('.select__single-value,[class*="-singleValue"]')?.textContent || el.getAttribute('aria-valuetext');
         if(norm(text)===norm(value)){committed=true;return;}
-        if(!comboRoot(el)&&el.getAttribute('aria-expanded')==='false'&&norm(el.value)===norm(value)){committed=true;return;}
+        if(!comboRoot(el)&&el.getAttribute('aria-expanded')==='false'&&norm(selected(el))===norm(value)){committed=true;return;}
       }
       throw Error('Could not verify the selected option. Review this field on the page.');
     } finally {
@@ -92,19 +115,22 @@
     try{for(const item of items){
       const record=fields.get(item.id),el=record?.el;
       try{
-        if(!el?.isConnected||!visible(el)||label(el)!==record.label||el.type!==record.type)throw Error('Field changed. Scan again.');
+        if(!el?.isConnected||!visible(el)||label(el)!==record.label||el.type!==record.type||el.getAttribute('role')!==record.role||el.getAttribute('aria-haspopup')!==record.hasPopup)throw Error('Field changed. Scan again.');
         if(record.group?record.group.some(r=>r.checked):!!selected(el).trim())throw Error('Already contains a value; left unchanged.');
         if(record.control==='combobox'){
           const choices=[item.value,...(Array.isArray(item.alternatives)?item.alternatives.slice(0,3):[])];
           for(let i=0;i<choices.length;i++){try{await fillCombo(el,choices[i]);item.selectedValue=choices[i];break;}catch(error){if(i===choices.length-1||!error.message.startsWith('No exact dropdown'))throw error;}}
         }
-        else if(record.control==='yesno'){
+        else if(record.control==='aria-radio'){
+          const matches=radioOptions(el).filter(r=>r.textContent.trim()===item.value&&visible(r));
+          if(matches.length!==1)throw Error('Option no longer available or ambiguous.');
+          clickAnswer(matches[0]);await pause(50);
+          if(matches[0].getAttribute('aria-checked')!=='true')throw Error('Radio selection did not stick.');
+        }else if(record.control==='yesno'){
           const matches=[...el.querySelectorAll('button[data-option]')].filter(b=>b.dataset.option===item.value&&visible(b));
           if(matches.length!==1)throw Error('Option no longer available.');
           // Some answer buttons omit type=button. Block their native submit default.
-          const blockSubmit=event=>{event.preventDefault();event.stopImmediatePropagation();};
-          document.addEventListener('submit',blockSubmit,true);
-          try{matches[0].click();}finally{document.removeEventListener('submit',blockSubmit,true);}
+          clickAnswer(matches[0]);
           await pause(50);
           if(selected(el)!==item.value)throw Error('Yes/No selection did not stick.');
         }else if(record.control==='checkbox'){
@@ -132,7 +158,7 @@
   function jobContext(){const main=document.querySelector('main');if(!main)return '';const text=main.innerText, marker=text.search(/Apply for this job/i);return marker>=0?text.slice(0,marker).slice(0,12000):'';}
   const listener=(message,sender,reply)=>{
     if(sender.id!==chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('')))return;
-    if(message.type==='scan'){try{reply({fields:scan(),title:document.title,url:location.href,context:jobContext()});}catch(error){reply({error:error.message});}}
+    if(message.type==='scan'){try{reply({fields:scan(),title:document.title,url:location.href,context:jobContext(),embeddedCount:document.querySelectorAll('iframe,frame').length});}catch(error){reply({error:error.message});}}
     if(message.type==='apply'){apply(message.items,message.resume).then(results=>reply({results}),error=>reply({error:error.message}));return true;}
   };
   globalThis.__applyPersonally={listener};chrome.runtime.onMessage.addListener(listener);

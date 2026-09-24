@@ -1,3 +1,4 @@
+import {scanApplication,fillApplication} from './application.js';
 import {classify,suggestion,canDraft,isSensitive,savedFieldKey,fallbackValues} from './matching.js';
 const $=id=>document.getElementById(id);
 let tabId, pageUrl, rows=[], resume;
@@ -13,6 +14,7 @@ function render(field, profile) {
   check.checked=eligible && !!(value || (kind==='resume' && resume));
   check.disabled=!eligible;
   label.append(check,document.createTextNode(' '+field.label));card.append(label);
+  if(field.sourceUrl && field.sourceUrl!==pageUrl)card.append(make('small',`Embedded form: ${new URL(field.sourceUrl).hostname}`));
   let editor;
   if (kind==='resume') {
     card.append(make('small',field.value?`Already attached: ${field.value}`:resume?resume.name:'Save a resume in Profile first.'));
@@ -51,15 +53,14 @@ $('scan').onclick=async()=>{
     const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
     if(!tab?.id || !/^https?:/.test(tab.url || ''))throw Error('Open an http(s) job application page first. Chrome internal pages cannot be filled.');
     tabId=tab.id;pageUrl=tab.url;
-    await chrome.scripting.executeScript({target:{tabId},files:['content.js']});
-    const result=await chrome.tabs.sendMessage(tabId,{type:'scan'});
+    const result=await scanApplication(tabId);
     if(result.error)throw Error(result.error);
     if(!$('context').value.trim()&&result.context)$('context').value=result.context;
     const saved=await chrome.storage.local.get(['profile','resume']);resume=saved.resume;
     $('pageInfo').textContent=`${new URL(result.url).hostname} · ${result.fields.length} fields found`;
     for(const field of result.fields)render(field,saved.profile || {});
     $('fill').hidden=!rows.length;
-    status(rows.length?'Review the suggestions below. Select only the fields you want to fill.':'No supported fields found. Open the application form, then scan again. Embedded forms and custom widgets may need manual entry.');
+    status((rows.length?'Review the suggestions below. Select only the fields you want to fill.':'No supported fields found. Open the application form, then scan again. Embedded forms and custom widgets may need manual entry.') + (result.warnings.length?'\n'+result.warnings.join('\n'):''));
   } catch(error){status(error.message);}finally{$('scan').disabled=false;}
 };
 $('fill').onclick=async()=>{
@@ -68,9 +69,9 @@ $('fill').onclick=async()=>{
     const tab=await chrome.tabs.get(tabId);
     if(tab.url!==pageUrl)throw Error('The page changed. Scan the application again.');
     status('Filling selected fields and verifying dropdown selections…');
-    const items=rows.filter(r=>r.check.checked && !r.check.disabled).map(r=>({id:r.field.id,kind:r.kind,value:r.editor?.value || '',alternatives:fallbackValues(r.kind,r.editor?.value || '',r.profile)}));
+    const items=rows.filter(r=>r.check.checked && !r.check.disabled).map(r=>({id:r.field.id,documentId:r.field.documentId,kind:r.kind,value:r.editor?.value || '',alternatives:fallbackValues(r.kind,r.editor?.value || '',r.profile)}));
     if(!items.length)throw Error('Select at least one field to fill.');
-    const result=await chrome.tabs.sendMessage(tabId,{type:'apply',items,resume:items.some(i=>i.kind==='resume')?resume:null});
+    const result=await fillApplication(tabId,items,resume);
     if(result.error)throw Error(result.error);
     const successes=result.results.filter(r=>r.ok);
     for(const r of rows)if(successes.some(s=>s.id===r.field.id)){r.check.checked=false;r.check.disabled=true;if(r.editor){r.editor.disabled=true;const chosen=successes.find(s=>s.id===r.field.id)?.selectedValue;if(chosen)r.editor.value=chosen;}}
