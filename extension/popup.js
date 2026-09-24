@@ -61,7 +61,7 @@ $('scan').onclick=async()=>{
   } catch(error){status(error.message);}finally{$('scan').disabled=false;}
 };
 $('fill').onclick=async()=>{
-  $('fill').disabled=true;
+  $('fill').disabled=true;$('scan').disabled=true;
   try {
     const tab=await chrome.tabs.get(tabId);
     if(tab.url!==pageUrl)throw Error('The page changed. Scan the application again.');
@@ -73,5 +73,5 @@ $('fill').onclick=async()=>{
     const successes=result.results.filter(r=>r.ok);
     for(const r of rows)if(successes.some(s=>s.id===r.field.id)){r.check.checked=false;r.check.disabled=true;if(r.editor){r.editor.disabled=true;const chosen=successes.find(s=>s.id===r.field.id)?.selectedValue;if(chosen)r.editor.value=chosen;}}
     status(`Filled ${successes.length} of ${items.length} selected fields. Review the application before submitting.` + result.results.filter(r=>!r.ok).map(r=>`\n${rows.find(row=>row.field.id===r.id)?.field.label}: ${r.reason}`).join(''));
-  }catch(error){status(error.message);}finally{$('fill').disabled=false;}
+  }catch(error){status(error.message);}finally{$('fill').disabled=false;$('scan').disabled=false;}
 };

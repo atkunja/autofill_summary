@@ -1,7 +1,7 @@
 (() => {
   // Replace old listeners when an updated extension is injected without reloading the form.
   if (globalThis.__applyPersonally?.listener) chrome.runtime.onMessage.removeListener(globalThis.__applyPersonally.listener);
-  const fields=new Map();let counter=0,busy=false;
+  const fields=new Map();let busy=false;
   const visible=el=>!el.matches(':disabled')&&!el.readOnly&&!el.closest('[inert]')&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
   const norm=s=>String(s || '').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   const labelText=node=>{const copy=node.cloneNode(true);copy.querySelectorAll('input,textarea,select,button').forEach(el=>el.remove());return copy.textContent;};
@@ -26,7 +26,7 @@
         question=el.closest('fieldset')?.querySelector('legend')?.textContent || el.closest('[role="radiogroup"]')?.getAttribute('aria-label') || el.name;
         options=group.map(r=>({value:r.value,label:label(r),disabled:r.disabled}));
       }
-      const id=String(++counter), control=el.getAttribute('role')==='combobox'?'combobox':el.type==='radio'?'radio':'native';
+      const id=crypto.randomUUID(), control=el.getAttribute('role')==='combobox'?'combobox':el.type==='radio'?'radio':'native';
       fields.set(id,{el,label:label(el),type:el.type,group,control});
       result.push({id,label:question.trim(),tag:el.tagName.toLowerCase(),type:el.type,control,autocomplete:el.autocomplete,value:group?(group.find(r=>r.checked)?.value || ''):selected(el),maxLength:el.maxLength>0?el.maxLength:null,options});
     }

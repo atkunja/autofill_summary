@@ -156,3 +156,14 @@ test('falls back to the broader Engineering option only when the precise major i
  const result=await worker.evaluate(({id,field})=>chrome.tabs.sendMessage(id,{type:'apply',items:[{id:field.id,value:'Computer Engineering',alternatives:['Engineering']}]}),{id,field});
  expect(result.results[0].ok).toBe(true);expect(result.results[0].selectedValue).toBe('Engineering');expect(JSON.parse(await application.locator('#values').textContent()).major.label).toBe('Engineering');
 });
+
+test('a stale preview cannot target new field IDs after script reinjection',async()=>{
+ const application=await context.newPage();await application.goto(url+'/?reinjected');
+ const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target+'/?reinjected').id,url);
+ const result=await worker.evaluate(async id=>{
+  await chrome.scripting.executeScript({target:{tabId:id},files:['content.js']});const old=(await chrome.tabs.sendMessage(id,{type:'scan'})).fields[0];
+  await chrome.scripting.executeScript({target:{tabId:id},files:['content.js']});await chrome.tabs.sendMessage(id,{type:'scan'});
+  return chrome.tabs.sendMessage(id,{type:'apply',items:[{id:old.id,value:'Stale value'}]});
+ },id);
+ expect(result.results[0].ok).toBe(false);await expect(application.locator('#first')).toHaveValue('');
+});
