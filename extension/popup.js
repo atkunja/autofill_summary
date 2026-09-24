@@ -1,0 +1,72 @@
+import {classify,suggestion,canDraft,isSensitive} from './matching.js';
+const $=id=>document.getElementById(id);
+let tabId, pageUrl, rows=[], resume;
+const status=text=>$('status').textContent=text;
+$('profile').onclick=()=>chrome.runtime.openOptionsPage();
+function make(tag, text) {const el=document.createElement(tag);if(text)el.textContent=text;return el;}
+function render(field, profile) {
+  const card=make('div');card.className='field';
+  const label=make('label'), check=make('input');check.type='checkbox';
+  const kind=classify(field), value=suggestion(field,profile);
+  const eligible=!field.value && !isSensitive(field.label);
+  check.checked=eligible && !!(value || (kind==='resume' && resume));
+  check.disabled=!eligible;
+  label.append(check,document.createTextNode(' '+field.label));card.append(label);
+  let editor;
+  if (kind==='resume') {
+    card.append(make('small',field.value?`Already attached: ${field.value}`:resume?resume.name:'Save a resume in Profile first.'));
+    if(!resume)check.disabled=true;
+  } else if(field.type==='file' || isSensitive(field.label)) {
+    check.disabled=true;card.append(make('small','Complete this field directly on the application.'));
+  } else {
+    editor=make(field.options?'select':'textarea');editor.setAttribute('aria-label',`Value for ${field.label}`);
+    if(field.options)for(const option of field.options){const o=make('option',option.label);o.value=option.value;o.disabled=option.disabled;editor.append(o);}
+    editor.value=field.value || value;editor.disabled=!eligible;
+    if(field.maxLength)editor.maxLength=field.maxLength;
+    card.append(editor);
+    if(field.value)card.append(make('small','Already filled — left unchanged.'));
+    else if(canDraft(field)) {
+      const button=make('button','Generate AI draft');button.type='button';
+      button.onclick=async()=>{
+        button.disabled=true;status('Drafting with your experience, goals, question, and supplied job context…');
+        try {
+          const result=await chrome.runtime.sendMessage({type:'draft',args:{question:field.label,context:$('context').value,maxLength:field.maxLength}});
+          if(!result)throw Error('Could not reach the extension. Reload it and try again.');
+          if(result.error)throw Error(result.error);
+          editor.value=result.answer;check.checked=false;
+          status('Draft ready. Edit it, then select its checkbox to approve filling.' + (field.maxLength && result.answer.length>field.maxLength?' Shorten it to fit the character limit.':''));
+        }catch(error){status(error.message);}finally{button.disabled=false;}
+      };
+      const actions=make('div');actions.className='actions';actions.append(button);card.append(actions);
+    }
+  }
+  $('fields').append(card);rows.push({field,check,editor,kind});
+}
+$('scan').onclick=async()=>{
+  $('scan').disabled=true;rows=[];$('fields').replaceChildren();$('fill').hidden=true;
+  try {
+    const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+    if(!tab?.id || !/^https?:/.test(tab.url || ''))throw Error('Open an http(s) job application page first. Chrome internal pages cannot be filled.');
+    tabId=tab.id;pageUrl=tab.url;
+    await chrome.scripting.executeScript({target:{tabId},files:['content.js']});
+    const result=await chrome.tabs.sendMessage(tabId,{type:'scan'});
+    const saved=await chrome.storage.local.get(['profile','resume']);resume=saved.resume;
+    $('pageInfo').textContent=`${new URL(result.url).hostname} · ${result.fields.length} fields found`;
+    for(const field of result.fields)render(field,saved.profile || {});
+    $('fill').hidden=!rows.length;
+    status(rows.length?'Review the suggestions below. Select only the fields you want to fill.':'No supported fields found. Open the application form, then scan again. Embedded forms and custom widgets may need manual entry.');
+  } catch(error){status(error.message);}finally{$('scan').disabled=false;}
+};
+$('fill').onclick=async()=>{
+  $('fill').disabled=true;
+  try {
+    const tab=await chrome.tabs.get(tabId);
+    if(tab.url!==pageUrl)throw Error('The page changed. Scan the application again.');
+    const items=rows.filter(r=>r.check.checked && !r.check.disabled).map(r=>({id:r.field.id,kind:r.kind,value:r.editor?.value || ''}));
+    if(!items.length)throw Error('Select at least one field to fill.');
+    const result=await chrome.tabs.sendMessage(tabId,{type:'apply',items,resume:items.some(i=>i.kind==='resume')?resume:null});
+    const successes=result.results.filter(r=>r.ok);
+    for(const r of rows)if(successes.some(s=>s.id===r.field.id)){r.check.checked=false;r.check.disabled=true;if(r.editor)r.editor.disabled=true;}
+    status(`Filled ${successes.length} of ${items.length} selected fields. Review the application before submitting.` + result.results.filter(r=>!r.ok).map(r=>`\n${rows.find(row=>row.field.id===r.id)?.field.label}: ${r.reason}`).join(''));
+  }catch(error){status(error.message);}finally{$('fill').disabled=false;}
+};

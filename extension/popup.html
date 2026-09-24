@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Apply, personally</title><link rel="stylesheet" href="styles.css"></head><body class="popup"><main>
+<header><div><div class="eyebrow">Your next chapter</div><h1>Apply, personally.</h1></div><button id="profile">Profile ↗</button></header>
+<p>Your details. Your experience. A head start on the application in front of you.</p>
+<button class="primary" id="scan">Scan this application</button>
+<p class="hint" id="pageInfo">Only the page you choose is accessed.</p>
+<details><summary>Context for better answers</summary><label for="context">Company, role, and relevant job description</label><textarea id="context" maxlength="12000" placeholder="Paste the relevant job description here. This context is sent to OpenAI only when you generate a draft."></textarea></details>
+<div id="fields"></div><div class="actions"><button class="primary" id="fill" hidden>Fill selected fields</button></div>
+<div id="status" role="status" aria-live="polite"></div><footer>Review every answer. Existing entries stay unchanged.<br>You decide when to submit.</footer>
+</main><script type="module" src="popup.js"></script></body></html>
