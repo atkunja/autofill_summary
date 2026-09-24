@@ -33,7 +33,9 @@ test('profile persists; preview fills contact and resume without overwriting or 
   await worker.evaluate(id=>chrome.tabs.update(id,{active:true}),id);
   await popup.getByRole('button',{name:'Scan this application'}).click();await expect(popup.locator('#pageInfo')).toContainText('6 fields found');
   await expect(popup.getByLabel('Value for First name')).toHaveValue('Alex');
+  await expect(popup.locator('#coverage')).toContainText('1 already filled · 3 selected · 2 need attention');
   await popup.getByRole('button',{name:'Fill selected fields'}).click();await expect(popup.locator('#status')).toContainText('Filled 3 of 3');
+  await expect(popup.locator('#coverage')).toContainText('4 already filled · 0 selected · 2 need attention');
   await expect(page.locator('#first')).toHaveValue('Alex');await expect(page.locator('#state')).toHaveValue('MI');await expect(page.locator('#email')).toHaveValue('existing@example.test');
   expect(await page.locator('#resume').evaluate(el=>el.files[0].name)).toBe('resume.txt');expect(await page.evaluate(()=>window.submitted)).toBe(false);
   await expect(page.locator('#gender')).toHaveValue('');
@@ -276,4 +278,22 @@ test('attachment-only profiles explain missing context and keep SMS consent manu
  await expect(popup.locator('#status')).toContainText('Your resume is attached, but its text and education are not saved');
  await expect(popup.getByRole('checkbox',{name:'Communication consent',exact:true})).toBeDisabled();
  await expect(popup.getByLabel('Value for School',{exact:true})).toHaveValue('');
+});
+
+test('resume upload prepares reviewable education without replacing saved answers',async()=>{
+ await worker.evaluate(()=>chrome.storage.local.set({profile:{degree:'My saved degree'},resume:null}));
+ const options=await context.newPage();await options.goto(`chrome-extension://${extensionId}/options.html`);
+ const resume='EDUCATION\nExample University\nBachelor of Science, Computer Engineering May 2028\nEXPERIENCE\nBuilt reliable tools.';
+ await options.locator('#resume').setInputFiles({name:'education.txt',mimeType:'text/plain',buffer:Buffer.from(resume)});
+ await expect(options.locator('#status')).toContainText('ready to review');
+ await expect(options.getByLabel('Experience / resume text')).toHaveValue(resume);
+ await expect(options.getByLabel('School / university')).toHaveValue('Example University');
+ await expect(options.getByLabel('Degree level')).toHaveValue('My saved degree');
+ await expect(options.getByLabel('Graduation year')).toHaveValue('2028');
+ await expect(options.getByLabel('Education start year')).toHaveValue('');
+ expect(await worker.evaluate(async()=>(await chrome.storage.local.get('profile')).profile.background)).toBeUndefined();
+ await options.getByRole('button',{name:'Save profile',exact:true}).click();
+ await expect(options.locator('#status')).toContainText('Profile saved');
+ await options.locator('#resume').setInputFiles({name:'replacement.txt',mimeType:'text/plain',buffer:Buffer.from('Different resume')});
+ await expect(options.getByLabel('Experience / resume text')).toHaveValue(resume);
 });

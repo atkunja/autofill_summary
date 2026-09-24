@@ -4,7 +4,7 @@ import {projectEditor} from './project-editor.js';
 import {extractResume} from './resume.js';
 import {parseProfileImport} from './profile-import.js';
 const $ = id => document.getElementById(id);
-let savedResume;
+let savedResume,preparingResume=false;
 const projects=projectEditor($('projects'),report);
 $('addProject').onclick=()=>{try{projects.add();}catch(error){report(error);}};
 for (const [key,label] of Object.entries(allProfileFields)) {
@@ -26,6 +26,7 @@ async function load() {
 function report(error) {$('status').textContent=error.message;}
 $('profileForm').addEventListener('submit', async e => {
   e.preventDefault();
+  if(preparingResume){report(Error('Wait for resume preparation to finish, then review and save.'));return;}
   try {
     const profile=Object.fromEntries([...Object.keys(allProfileFields),'background','goals'].map(k=>[k,$(k).value.trim()]));
     profile.projects=projects.read();
@@ -53,6 +54,7 @@ $('extractResume').onclick=async()=>{
     const result=await extractResume(file);
     if($('background').value.trim() && !confirm('Replace the experience / resume text with the extracted text?'))return;
     $('background').value=result.text;
+    addEducation(result.text);
     $('status').textContent='Resume text extracted locally. Review it, remove any contact details you do not want in AI requests, then Save profile.'+(result.truncated?' Limited to 16,000 characters.':'');
   }catch(error){report(error);}finally{button.disabled=false;}
 };
@@ -70,3 +72,21 @@ $('profileImport').onchange=async()=>{
 };
 $('useEducation').onclick=()=>{const inferred=inferEducation($('background').value);for(const [key,value] of Object.entries(inferred))if(!$(key).value)$(key).value=value;$('status').textContent='Education details added where recognized. Review dates and school, then Save profile.';};
 load().catch(report);
+
+function addEducation(text){for(const [key,value] of Object.entries(inferEducation(text)))if(!$(key).value.trim())$(key).value=value;}
+$('resume').addEventListener('change',async()=>{
+  const file=$('resume').files[0];
+  if(!file || $('background').value.trim())return;
+  if(!/\.(pdf|txt)$/i.test(file.name)){report(Error('Resume selected. Paste its text to enable education matching and AI answers.'));return;}
+  preparingResume=true;
+  const save=$('profileForm').querySelector('[type="submit"]');save.disabled=true;
+  $('extractResume').disabled=true;$('resume').disabled=true;
+  $('status').textContent='Reading your resume locally and preparing education details…';
+  try{
+    const result=await extractResume(file);
+    // Preserve text entered while parsing, including a concurrent profile import.
+    if(!$('background').value.trim()){$('background').value=result.text;addEducation(result.text);}
+    $('status').textContent='Resume text and recognized education are ready to review. Check the details, then Save profile.'+(result.truncated?' Text limited to 16,000 characters.':'');
+  }catch(error){report(error);}
+  finally{preparingResume=false;save.disabled=false;$('extractResume').disabled=false;$('resume').disabled=false;}
+});
