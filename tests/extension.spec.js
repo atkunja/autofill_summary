@@ -265,3 +265,15 @@ test('changed custom control roles are rejected before any click',async()=>{
   expect(result.results[0].ok).toBe(false);
   expect(await application.evaluate(()=>!!window.clickedChangedControl)).toBe(false);
 });
+
+test('attachment-only profiles explain missing context and keep SMS consent manual',async()=>{
+ await worker.evaluate(()=>chrome.storage.local.set({profile:{firstName:'Alex'},resume:{name:'resume.txt',type:'text/plain',data:btoa('Example resume')}}));
+ const application=await context.newPage();await application.goto(url+'/ashby?empty-context');
+ const popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+ const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target+'/ashby?empty-context').id,url);
+ await worker.evaluate(id=>chrome.tabs.update(id,{active:true}),id);
+ await popup.getByRole('button',{name:'Scan this application'}).click();
+ await expect(popup.locator('#status')).toContainText('Your resume is attached, but its text and education are not saved');
+ await expect(popup.getByRole('checkbox',{name:'Communication consent',exact:true})).toBeDisabled();
+ await expect(popup.getByLabel('Value for School',{exact:true})).toHaveValue('');
+});

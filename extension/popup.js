@@ -58,9 +58,11 @@ $('scan').onclick=async()=>{
     if(!$('context').value.trim()&&result.context)$('context').value=result.context;
     const saved=await chrome.storage.local.get(['profile','resume']);resume=saved.resume;
     $('pageInfo').textContent=`${new URL(result.url).hostname} · ${result.fields.length} fields found`;
-    for(const field of result.fields)render(field,saved.profile || {});
+    const profile=saved.profile || {};
+    const contextMissing=saved.resume && !profile.background?.trim() && !profile.school;
+    for(const field of result.fields)render(field,profile);
     $('fill').hidden=!rows.length;
-    status((rows.length?'Review the suggestions below. Select only the fields you want to fill.':'No supported fields found. Open the application form, then scan again. Embedded forms and custom widgets may need manual entry.') + (result.warnings.length?'\n'+result.warnings.join('\n'):''));
+    status((rows.length?'Review the suggestions below. Select only the fields you want to fill.':'No supported fields found. Open the application form, then scan again. Embedded forms and custom widgets may need manual entry.') + (contextMissing?'\nYour resume is attached, but its text and education are not saved. In Profile, extract the resume text or import your prepared profile, then Save profile and rescan.':'') + (result.warnings.length?'\n'+result.warnings.join('\n'):''));
   } catch(error){status(error.message);}finally{$('scan').disabled=false;}
 };
 $('fill').onclick=async()=>{
