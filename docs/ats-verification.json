@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "policy": "Fixture results never establish live verification. A live run verifies only its recorded site and control scope.",
+  "platforms": [
+    {"ats": "ashby", "liveStatus": "unverified"},
+    {"ats": "greenhouse", "liveStatus": "unverified"},
+    {"ats": "workday", "liveStatus": "unverified"},
+    {"ats": "lever", "liveStatus": "unverified"},
+    {"ats": "icims", "liveStatus": "unverified"}
+  ],
+  "runs": []
+}

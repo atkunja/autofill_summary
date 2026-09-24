@@ -1,0 +1,10 @@
+<!doctype html><title>Lever-style behavioral fixture v1</title>
+<main><h1>Example Company — Engineering Intern</h1><form class="application-form">
+<label>Full name<input name="name" id="name"></label>
+<label>Email<input type="email" id="email" value="existing@example.test"></label>
+<label>Phone<input type="tel" id="phone"></label>
+<label>GitHub URL<input type="url" id="github"></label>
+<label>Why do you want to join our team?<textarea id="why" maxlength="500"></textarea></label>
+<label><input type="checkbox" id="consent">I consent to recruiting messages</label>
+<button>Submit application</button></form></main>
+<script>window.submitted=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submitted=true;};</script>

@@ -1,22 +1,17 @@
-# Autofill reliability priorities
+# Autofill reliability
 
-The current extension has useful control handling, but passing local fixtures does not establish that a live application is complete. The Ramp investigation exposed a setup gap: the resume attachment existed while education, extracted background and project context were empty.
+Implemented in 0.6.0. Automated acceptance tests exercise the behavior below; live ATS coverage is tracked separately.
 
-## Implemented in this update
+| Priority | Implementation | Acceptance evidence |
+| --- | --- | --- |
+| 1 | Explicit profile-field selector for unmatched ordinary questions. Save, edit or remove mappings scoped to normalized question, control, tag and type. Consent and unsupported disclosures cannot be remapped. | Browser test reuses a mapping on another application, preserves an existing answer, edits and removes it. Unit tests reject disclosure mappings and mismatched controls. |
+| 2 | Verify the complete filled set for at least 1.5 seconds and until 500 ms of quiet, bounded at 4 seconds. Unsettled pages, replaced controls and changed answers report failures. Verify earlier documents again after later documents finish. | Delayed replacement clears a field and cannot report success; a delayed user edit survives and reports failure. No automatic retry. |
+| 3 | Inspect meaningful form structure every 1.5 seconds while the panel is open; invalidate filling and offer rescan. Preserve edited drafts only for a unique unchanged question/control/options in the same document. | Step replacement invalidates old controls. Edited drafts survive rescan. New fields and restored drafts remain unselected. |
+| 4 | Batch unanswered writing questions with explicit company/role context, at most 8 fields and 2 concurrent requests. Cancel aborts local active requests and stops queued requests. Enforce field character limits. | Browser tests check concurrency, cancellation, context and unselected results; unit tests cover queue bounds and character limits. Requests instruct the model to use supplied facts, but the user must review accuracy. |
+| 5 | Five representative behavioral ATS fixtures, per-run outcome evidence and a manual live-site checklist. | Separate correct, incorrect, missed and preserved-answer counts, dated and versioned. All live platforms remain unverified until actual recorded live checks pass. |
 
-- Prepare PDF/TXT text and recognized education when a resume is selected and experience text is empty. Keep existing answers, leave unrecognized dates blank, and require Save profile after review. Unsupported documents explain the manual text step.
-- Report detected fields as already filled, selected, or needing attention. Update after filling and selection changes. This reports detected fields only, not hidden or inaccessible application fields.
+Verification is a bounded observation, not a guarantee against future page changes. Keep the panel open to receive structural-change notices. Closing it cancels drafting and discards unsaved panel drafts. Cancellation cannot undo a request already processed by the model provider.
 
-## Next priorities, in order
+Resume extraction and profile coverage improvements from 0.5.0 remain: new PDF/TXT uploads prepare text and recognized education when background is empty, require profile review/save, and never manufacture missing dates. Coverage counts reflect detected fields only.
 
-| Priority | Problem in current implementation | Concrete change | Acceptance criteria |
-| --- | --- | --- | --- |
-| 1 | `matching.js` uses narrow label patterns. Unknown but answerable fields still require manual mapping. | Add an explicit “use this profile field” selector for unmatched fields, with a saved, editable mapping scoped to the question and control type. Never infer consent or unsupported disclosures. | A reviewed mapping works on the next application, can be removed, and cannot overwrite an existing answer. |
-| 2 | `content.js` verifies most native values immediately. Later React renders or upload parsing may change them. | Verify the full filled set after asynchronous updates settle and show changed/rejected fields as failures. | A fixture that clears a value after a delayed rerender cannot produce a successful final result. Do not silently retry over user edits. |
-| 3 | Each application step requires a manual scan. | Detect meaningful form changes, offer a rescan, and preserve edited drafts where the question and document are unchanged. | Navigating a step invalidates stale controls; a rescan preserves drafts and never fills newly added fields without review. |
-| 4 | AI drafts are generated individually and company context capture is limited. | Add a reviewed batch-draft action with bounded concurrency, cancellation, field limits, and explicit company/role context. | Drafts remain unselected until reviewed; no invented personal facts; cancellation stops queued requests. |
-| 5 | ATS claims exceed the available evidence if based only on synthetic fixtures. | Maintain reproducible representative forms and a manual live-site verification checklist for Ashby, Greenhouse, Workday, Lever and iCIMS. | Track correct fills, incorrect fills, missed known fields, and preserved existing answers separately. Record site/date/control version. Never mark an ATS verified solely because a fixture passes. |
-
-## Quality target
-
-Measure known, answerable fields separately from missing profile facts, unavailable options, consent, and unsupported widgets. Optimize for zero wrong answers and zero unintended submissions first, then increase coverage. Use synthetic candidate data in public fixtures. Keep real profiles and credentials out of the repository.
+See [ATS live checklist](ATS-LIVE-CHECKLIST.md) and [verification registry](ats-verification.json).

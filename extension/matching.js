@@ -78,8 +78,7 @@ export function fallbackValues(key,value,profile={}) {
   if(key==='race' && profile.hispanicLatino==='No' && normalize(value)==='asian')return ['Asian (Not Hispanic or Latino)'];
   return [];
 }
-export function suggestion(field, profile) {
-  const key=classify(field);
+export function suggestion(field, profile, key=classify(field)) {
   if(!key || key==='resume')return '';
   const education=inferEducation(profile.background);
   let value=key==='fullName'?[profile.firstName,profile.lastName].filter(Boolean).join(' '):profile[key] || education[key] || '';

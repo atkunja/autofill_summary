@@ -1,3 +1,4 @@
+import {renderMappings} from './mapping-editor.js';
 import {educationFields,preferenceFields,yesNoFields,inferEducation} from './profile-schema.js';
 import {profileFields,allProfileFields} from './matching.js';
 import {projectEditor} from './project-editor.js';
@@ -17,6 +18,7 @@ for (const [key,label] of Object.entries(allProfileFields)) {
 async function load() {
   const {profile={},resume,model='gpt-5-mini'}=await chrome.storage.local.get(['profile','resume','model']);
   savedResume=resume;
+  await renderMappings($('mappings'),message=>$('status').textContent=message);
   projects.set(profile.projects || []);
   for (const key of [...Object.keys(allProfileFields),'background','goals']) $(key).value=profile[key] || '';
   $('model').value=model; $('resumeName').textContent=resume?.name || 'No resume saved.';

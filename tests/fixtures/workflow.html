@@ -1,0 +1,15 @@
+<!doctype html><title>Workflow regression application</title>
+<form id="application">
+<label>Academic institution attended<input id="institution"></label>
+<label>Why this role?<textarea id="draft-one" maxlength="300"></textarea></label>
+<label>Describe a project<textarea id="draft-two" maxlength="250"></textarea></label>
+<label>Tell us about your experience<textarea id="draft-three" maxlength="300"></textarea></label>
+<label>Gender<input id="gender"></label>
+<label><input type="checkbox" id="terms">Accept terms</label>
+<button type="button" id="add">Add another question</button>
+<button type="submit">Submit application</button>
+</form>
+<script>
+window.submitted=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submitted=true;};
+document.getElementById('add').onclick=()=>{const label=document.createElement('label');label.textContent='First name';label.innerHTML+='<input id="added-first">';document.querySelector('form').append(label);};
+</script>

@@ -1,9 +1,19 @@
 import {build} from 'esbuild';
 import {test,expect,chromium} from '@playwright/test';
-import {mkdtemp,cp,readFile,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,cp,readFile,writeFile,rm,mkdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import {createHash} from 'node:crypto';
+const atsEvidence=[];
+function recordFixture(ats,observations,preserved=[],expectedMissed=0){
+ const correct=observations.filter(o=>o.actual===o.expected).length;
+ const incorrect=observations.filter(o=>o.actual!==o.expected&&o.actual!=='').length;
+ const missed=observations.filter(o=>o.actual==='').length;
+ const kept=preserved.filter(o=>o.actual===o.expected).length;
+ atsEvidence.push({ats,evidenceKind:'fixture',liveVerified:false,testedAt:new Date().toISOString(),controlVersion:'behavioral-v1',knownFields:observations.length,correctFills:correct,incorrectFills:incorrect,missedKnownFields:missed,existingFields:preserved.length,preservedExistingAnswers:kept,overwrittenExistingAnswers:preserved.length-kept,observations,preserved});
+ expect(incorrect).toBe(0);expect(missed).toBe(expectedMissed);expect(kept).toBe(preserved.length);
+}
 let context,worker,extensionId,temp,server,url,page;
 test.beforeAll(async()=>{
   temp=await mkdtemp(path.join(tmpdir(),'apply-test-'));
@@ -13,13 +23,15 @@ test.beforeAll(async()=>{
   manifest.host_permissions.push('http://127.0.0.1/*','https://example.com/*');await writeFile(path.join(ext,'manifest.json'),JSON.stringify(manifest));
   const fixtureBundle=(await build({entryPoints:['tests/fixtures/greenhouse.jsx'],bundle:true,write:false,format:'iife'})).outputFiles[0].text;
   const ashbyBundle=(await build({entryPoints:['tests/fixtures/ashby.jsx'],bundle:true,write:false,format:'iife'})).outputFiles[0].text;
+  const atsFixtures=Object.fromEntries(await Promise.all(['lever','workday','icims'].map(async name=>[name,await readFile(`tests/fixtures/${name}.html`,'utf8')])));
+  const workflowFixture=await readFile('tests/fixtures/workflow.html','utf8');
   const portableFixture=await readFile('tests/fixtures/portable.html','utf8');
-  server=http.createServer((req,res)=>{if(req.url.startsWith('/portable')){res.setHeader('Content-Type','text/html');res.end(portableFixture);return;}if(req.url==='/blocked-embed'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Blocked embed</title><label>First name<input></label><iframe src="https://blocked.test/application"></iframe>');return;}if(req.url==='/embedded'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Embedded application</title><iframe src="/portable?one"></iframe><iframe src="/portable?two"></iframe>');return;}if(req.url==='/ashby.js'){res.setHeader('Content-Type','text/javascript');res.end(ashbyBundle);return;}if(req.url.startsWith('/ashby')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Ashby fixture</title><div id="root"></div><script src="/ashby.js"></script>');return;}if(req.url==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(fixtureBundle);return;}if(req.url.startsWith('/greenhouse')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Greenhouse fixture</title><div id="root"></div><script src="/fixture.js"></script>');return;}res.setHeader('Content-Type','text/html');res.end(`<!doctype html><title>Example application</title><form><label>First name<input id="first" autocomplete="given-name"></label><label>Email<input id="email" type="email" value="existing@example.test"></label><label>State<select id="state"><option value="">Choose</option><option value="MI">Michigan</option></select></label><label>Resume<input id="resume" type="file" accept=".txt"></label><label>Why this company?<textarea id="why"></textarea></label><label>Gender<textarea id="gender"></textarea></label><input id="hidden" style="display:none"><button type="submit">Submit application</button></form><script>window.submitted=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submitted=true};</script>`);});
+  server=http.createServer((req,res)=>{if(req.url==='/ats/icims'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>iCIMS embedded fixture</title><iframe src="/ats/icims-content"></iframe>');return;}const atsName=req.url==='/ats/icims-content'?'icims':req.url.replace('/ats/','');if(atsFixtures[atsName]){res.setHeader('Content-Type','text/html');res.end(atsFixtures[atsName]);return;}if(req.url.startsWith('/workflow')){res.setHeader('Content-Type','text/html');res.end(workflowFixture);return;}if(req.url.startsWith('/portable')){res.setHeader('Content-Type','text/html');res.end(portableFixture);return;}if(req.url==='/blocked-embed'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Blocked embed</title><label>First name<input></label><iframe src="https://blocked.test/application"></iframe>');return;}if(req.url==='/embedded'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Embedded application</title><iframe src="/portable?one"></iframe><iframe src="/portable?two"></iframe>');return;}if(req.url==='/ashby.js'){res.setHeader('Content-Type','text/javascript');res.end(ashbyBundle);return;}if(req.url.startsWith('/ashby')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Ashby fixture</title><div id="root"></div><script src="/ashby.js"></script>');return;}if(req.url==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(fixtureBundle);return;}if(req.url.startsWith('/greenhouse')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Greenhouse fixture</title><div id="root"></div><script src="/fixture.js"></script>');return;}res.setHeader('Content-Type','text/html');res.end(`<!doctype html><title>Example application</title><form><label>First name<input id="first" autocomplete="given-name"></label><label>Email<input id="email" type="email" value="existing@example.test"></label><label>State<select id="state"><option value="">Choose</option><option value="MI">Michigan</option></select></label><label>Resume<input id="resume" type="file" accept=".txt"></label><label>Why this company?<textarea id="why"></textarea></label><label>Gender<textarea id="gender"></textarea></label><input id="hidden" style="display:none"><button type="submit">Submit application</button></form><script>window.submitted=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submitted=true};</script>`);});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));url=`http://127.0.0.1:${server.address().port}`;
   context=await chromium.launchPersistentContext(path.join(temp,'profile'),{channel:'chromium',headless:true,args:[`--disable-extensions-except=${ext}`,`--load-extension=${ext}`]});
   worker=context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');extensionId=new URL(worker.url()).host;
 });
-test.afterAll(async()=>{await context?.close();await new Promise(resolve=>server?.close(resolve));if(temp)await rm(temp,{recursive:true,force:true});});
+test.afterAll(async()=>{if(atsEvidence.length){await mkdir('test-results',{recursive:true});const manifest=JSON.parse(await readFile('extension/manifest.json','utf8'));for(const entry of atsEvidence){const ext=['ashby','greenhouse'].includes(entry.ats)?'jsx':'html';entry.fixtureSha256=createHash('sha256').update(await readFile(`tests/fixtures/${entry.ats}.${ext}`)).digest('hex');entry.extensionVersion=manifest.version;entry.browserVersion=context.browser()?.version()||'Chromium persistent context';}await writeFile('test-results/ats-fixtures.json',JSON.stringify(atsEvidence,null,2));}await context?.close();await new Promise(resolve=>server?.close(resolve));if(temp)await rm(temp,{recursive:true,force:true});});
 test('profile persists; preview fills contact and resume without overwriting or submitting',async()=>{
   const options=await context.newPage();await options.goto(`chrome-extension://${extensionId}/options.html`);
   await options.getByLabel('First name',{exact:true}).fill('Alex');await options.getByLabel('State / province').fill('Michigan');
@@ -71,6 +83,8 @@ test('AI draft requires explicit selection and credentials stay out of content s
   const privacy=await worker.evaluate(async id=>(await chrome.scripting.executeScript({target:{tabId:id},func:async()=>{
     try {await chrome.storage.local.get('profile');return false;}catch{return true;}
   }}))[0].result,id);expect(privacy).toBe(true);
+  await expect(popup.locator('#status')).toContainText('Filled');
+  await popup.setViewportSize({width:390,height:850});
   await popup.evaluate(()=>window.scrollTo(0,0));
   await popup.screenshot({path:'test-results/popup.png',fullPage:true});
 });
@@ -151,6 +165,7 @@ test('fills React Select education, saved disclosures, graduation questions, and
  expect(values.school.label).toBe('Example University - Main');expect(values.major.label).toBe('Computer Engineering');expect(values.graduation.label).toBe('No');expect(values.internship.label).toBe('Yes');expect(values.authorization.label).toBe('Yes');expect(values.sponsor.label).toBe('No');expect(values.gender.label).toBe('Male');expect(values.race.label).toBe('Asian');expect(values.ethnicity.label).toBe('No');expect(values.veteran.label).toBe('I am not a protected veteran');
  await expect(application.locator('#end-year')).toHaveValue('2028');await expect(application.locator('input[name=adult][value=yes]')).toBeChecked();await expect(application.locator('#consent')).not.toBeChecked();
  expect(await popup.locator('#context').inputValue()).toContain('reliable connectivity');
+ recordFixture('greenhouse',Object.entries({school:'Example University - Main',degree:"Bachelor's Degree",'end-month':'May',major:'Computer Engineering',graduation:'No',internship:'Yes',authorization:'Yes',sponsor:'No',race:'Asian',ethnicity:'No',veteran:'I am not a protected veteran'}).map(([field,expected])=>({field,expected,actual:values[field]?.label||''})).concat([{field:'end-year',expected:'2028',actual:await application.locator('#end-year').inputValue()},{field:'adult',expected:'yes',actual:await application.locator('input[name=adult]:checked').inputValue()}]),[{field:'gender',expected:'Male',actual:values.gender.label}]);
 });
 
 test('falls back to the broader Engineering option only when the precise major is absent',async()=>{
@@ -173,7 +188,7 @@ test('a stale preview cannot target new field IDs after script reinjection',asyn
 });
 
 test('Ashby nested education, canonical school options and answer buttons fill through preview',async()=>{
-  await worker.evaluate(()=>chrome.storage.local.set({profile:{firstName:'Alex',lastName:'Example',school:'University of Michigan - Ann Arbor',degree:"Bachelor's Degree",discipline:'Computer Engineering',educationEndMonth:'May',educationEndYear:'2028',currentlyStudent:'Yes',sponsorship:'No'}}));
+  await worker.evaluate(()=>chrome.storage.local.set({resume:{name:'resume.txt',type:'text/plain',data:'RXhhbXBsZSByZXN1bWU='},profile:{firstName:'Alex',lastName:'Example',school:'University of Michigan - Ann Arbor',degree:"Bachelor's Degree",discipline:'Computer Engineering',educationEndMonth:'May',educationEndYear:'2028',currentlyStudent:'Yes',sponsorship:'No'}}));
   const application=await context.newPage();await application.goto(url+'/ashby');
   const popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup.html`);
   const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target+'/ashby').id,url);
@@ -197,6 +212,7 @@ test('Ashby nested education, canonical school options and answer buttons fill t
   await expect(application.getByLabel('I agree to terms')).not.toBeChecked();
   await expect(application.locator('input[name=communicationConsent]')).not.toBeChecked();
   expect(await application.evaluate(()=>!!window.submitted)).toBe(false);
+  recordFixture('ashby',[{field:'school',expected:'University of Michigan',actual:await application.getByRole('combobox',{name:'Search schools...'}).inputValue()},{field:'degree',expected:"Bachelor's Degree",actual:await application.locator('#degree').inputValue()},{field:'major',expected:'Computer Engineering',actual:await application.locator('#major').inputValue()},{field:'sponsorship',expected:'no',actual:await application.locator('button[data-option=no][aria-pressed=true]').getAttribute('data-option')},{field:'name',expected:'Alex Example',actual:await application.locator('.ashby-application-form-field-entry').filter({hasText:'Full Legal Name'}).locator('input').inputValue()},{field:'resume',expected:'resume.txt',actual:await application.locator('input[accept=".txt"]').evaluate(el=>el.files[0]?.name||'')},{field:'end-month',expected:'5',actual:await application.locator('select').nth(2).inputValue()},{field:'currently-student',expected:'Yes',actual:await application.getByLabel('Still Student?').isChecked()?'Yes':''},{field:'end-year',expected:'2028',actual:await application.locator('select').nth(3).inputValue(),limitation:'Known year is not offered by the fixture'}],[],1);
   // A second scan must preserve committed school and No answers.
   await popup.getByRole('button',{name:'Scan this application'}).click();
   await expect(popup.getByLabel('Value for School',{exact:true})).toBeDisabled();
@@ -224,7 +240,10 @@ test('portable ARIA controls, nearby labels, shadow fields and new steps work wi
   await expect(popup.getByLabel('Value for Country',{exact:true})).toBeDisabled();
   await expect(popup.getByLabel('Value for Are you authorized to work in the US?')).toBeDisabled();
   await application.locator('#next').click();
-  await popup.getByRole('button',{name:'Scan this application'}).click();
+  await expect(popup.locator('#changes')).toBeVisible();
+  await popup.getByRole('button',{name:'Rescan changed form'}).click();
+  await expect(popup.getByRole('checkbox',{name:'Last name',exact:true})).not.toBeChecked();
+  await popup.getByRole('checkbox',{name:'Last name',exact:true}).check();
   await popup.getByRole('button',{name:'Fill selected fields'}).click();
   await expect(application.locator('#last')).toHaveValue('Example');
 });
@@ -296,4 +315,137 @@ test('resume upload prepares reviewable education without replacing saved answer
  await expect(options.locator('#status')).toContainText('Profile saved');
  await options.locator('#resume').setInputFiles({name:'replacement.txt',mimeType:'text/plain',buffer:Buffer.from('Different resume')});
  await expect(options.getByLabel('Experience / resume text')).toHaveValue(resume);
+});
+
+async function openWorkflow(suffix,profile={firstName:'Alex',school:'Example University',background:'Built an API.'}){
+ await worker.evaluate(profile=>chrome.storage.local.set({profile,resume:null}),profile);
+ const application=await context.newPage();await application.goto(url+'/workflow?'+suffix);
+ const popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+ const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target).id,url+'/workflow?'+suffix);
+ await worker.evaluate(id=>chrome.tabs.update(id,{active:true}),id);
+ await popup.getByRole('button',{name:'Scan this application'}).click();
+ return {application,popup,id};
+}
+
+test('reviewed mappings persist across applications, can be edited and removed, and preserve entries',async()=>{
+ await worker.evaluate(()=>chrome.storage.local.remove('fieldMappings'));
+ const first=await openWorkflow('mapping-first');
+ await first.popup.getByLabel('Use profile field for Academic institution attended').selectOption('school');
+ await expect(first.popup.getByLabel('Value for Academic institution attended')).toHaveValue('Example University');
+ const row=first.popup.locator('.field').filter({hasText:'Academic institution attended'});
+ await row.getByRole('button',{name:'Save mapping',exact:true}).click();
+ await expect(row).toContainText('Mapping saved');
+ const second=await openWorkflow('mapping-second');
+ await expect(second.popup.getByLabel('Value for Academic institution attended')).toHaveValue('Example University');
+ await second.application.locator('#institution').fill('Human choice');
+ await second.popup.getByRole('button',{name:'Fill selected fields'}).click();
+ await expect(second.popup.locator('#status')).toContainText('Already contains a value');
+ await expect(second.application.locator('#institution')).toHaveValue('Human choice');
+ const options=await context.newPage();await options.goto(`chrome-extension://${extensionId}/options.html`);
+ await options.getByLabel('Mapping for Academic institution attended').selectOption('degree');
+ await options.getByRole('button',{name:'Save mapping',exact:true}).click();
+ await expect(options.locator('#status')).toContainText('Mapping updated');
+ expect(await worker.evaluate(async()=>(await chrome.storage.local.get('fieldMappings')).fieldMappings[0].profileKey)).toBe('degree');
+ await options.getByRole('button',{name:'Remove mapping',exact:true}).click();
+ await expect(options.locator('#mappings')).toContainText('No saved mappings');
+});
+
+test('delayed clearing and user edits fail final verification without retries',async()=>{
+ const {application,id}=await openWorkflow('delayed');
+ await application.locator('#institution').evaluate(el=>el.addEventListener('input',()=>setTimeout(()=>{el.value='User changed this';},650),{once:true}));
+ const field=await worker.evaluate(async id=>(await chrome.tabs.sendMessage(id,{type:'scan'})).fields.find(f=>f.label==='Academic institution attended'),id);
+ const result=await worker.evaluate(({id,field})=>chrome.tabs.sendMessage(id,{type:'apply',items:[{id:field.id,value:'Example University'}]}),{id,field});
+ expect(result.results[0].ok).toBe(false);expect(result.results[0].reason).toContain('after filling');
+ await expect(application.locator('#institution')).toHaveValue('User changed this');
+ await application.locator('#draft-one').evaluate(el=>el.addEventListener('input',()=>setTimeout(()=>{const replacement=el.cloneNode(true);replacement.value='';el.replaceWith(replacement);},650),{once:true}));
+ const cleared=await worker.evaluate(async id=>(await chrome.tabs.sendMessage(id,{type:'scan'})).fields.find(f=>f.label==='Why this role?'),id);
+ const rerender=await worker.evaluate(({id,field})=>chrome.tabs.sendMessage(id,{type:'apply',items:[{id:field.id,value:'Reviewed draft'}]}),{id,field:cleared});
+ expect(rerender.results[0].ok).toBe(false);
+ await expect(application.locator('#draft-one')).toHaveValue('');
+});
+
+test('changed forms preserve edited drafts and require review of new fields',async()=>{
+ const {application,popup}=await openWorkflow('rescan');
+ await popup.getByLabel('Value for Why this role?').fill('My carefully edited draft');
+ await application.locator('#add').click();
+ await expect(popup.locator('#changes')).toBeVisible();
+ await expect(popup.getByRole('button',{name:'Fill selected fields'})).toBeDisabled();
+ await popup.getByRole('button',{name:'Rescan changed form'}).click();
+ await expect(popup.getByLabel('Value for Why this role?')).toHaveValue('My carefully edited draft');
+ await expect(popup.getByRole('checkbox',{name:'Why this role?',exact:true})).not.toBeChecked();
+ await expect(popup.getByRole('checkbox',{name:'First name',exact:true})).not.toBeChecked();
+ await popup.getByRole('checkbox',{name:'Why this role?',exact:true}).check();
+ await popup.getByRole('button',{name:'Fill selected fields'}).click();
+ await expect(application.locator('#draft-one')).toHaveValue('My carefully edited draft');
+ await expect(application.locator('#added-first')).toHaveValue('');
+});
+
+test('batch drafting limits concurrency, sends explicit context, and keeps generated answers unselected',async()=>{
+ await worker.evaluate(async()=>{
+  await chrome.storage.session.set({apiKey:'test-only'});globalThis.batchActive=0;globalThis.batchMaximum=0;globalThis.batchRequests=[];
+  globalThis.fetch=async(_url,{body,signal})=>{globalThis.batchActive++;globalThis.batchMaximum=Math.max(globalThis.batchMaximum,globalThis.batchActive);globalThis.batchRequests.push(JSON.parse(body));await new Promise((resolve,reject)=>{const timer=setTimeout(resolve,150);signal.addEventListener('abort',()=>{clearTimeout(timer);reject(Error('aborted'));},{once:true});});globalThis.batchActive--;return {ok:true,json:async()=>({output:[{content:[{type:'output_text',text:'I built an API and want to deepen that experience.'}]}]})};};
+ });
+ const {popup}=await openWorkflow('batch');
+ await popup.getByRole('button',{name:'Draft unanswered questions (up to 8)'}).click();
+ await expect(popup.locator('#status')).toContainText('Enter the company and role');
+ await popup.getByLabel('Company',{exact:true}).fill('Example Company');await popup.getByLabel('Role',{exact:true}).fill('Intern');
+ await popup.getByRole('button',{name:'Draft unanswered questions (up to 8)'}).click();
+ await expect(popup.locator('#status')).toContainText('Draft ready: 3 answer(s)');
+ for(const label of ['Why this role?','Describe a project','Tell us about your experience']){
+  await expect(popup.getByLabel('Value for '+label)).toHaveValue('I built an API and want to deepen that experience.');
+  await expect(popup.getByRole('checkbox',{name:label,exact:true})).not.toBeChecked();
+ }
+ const evidence=await worker.evaluate(()=>({maximum:globalThis.batchMaximum,requests:globalThis.batchRequests}));
+ expect(evidence.maximum).toBe(2);expect(evidence.requests).toHaveLength(3);
+ expect(evidence.requests.every(r=>JSON.parse(r.input).company==='Example Company'&&JSON.parse(r.input).role==='Intern')).toBe(true);
+ expect(evidence.requests.every(r=>!JSON.parse(r.input).question.includes('Gender'))).toBe(true);
+});
+
+test('cancelling a batch aborts active fetches and never starts queued questions',async()=>{
+ await worker.evaluate(async()=>{
+  await chrome.storage.session.set({apiKey:'test-only'});globalThis.cancelStarted=0;globalThis.cancelAborted=0;
+  globalThis.fetch=(_url,{signal})=>{globalThis.cancelStarted++;return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>{globalThis.cancelAborted++;reject(Error('aborted'));},{once:true}));};
+ });
+ const {popup}=await openWorkflow('cancel');
+ await popup.locator('summary').click();await popup.getByLabel('Company',{exact:true}).fill('Example');await popup.getByLabel('Role',{exact:true}).fill('Intern');
+ await popup.getByRole('button',{name:'Draft unanswered questions (up to 8)'}).click();
+ await expect.poll(()=>worker.evaluate(()=>globalThis.cancelStarted)).toBe(2);
+ await popup.getByRole('button',{name:'Cancel drafting'}).click();
+ await expect.poll(()=>worker.evaluate(()=>globalThis.cancelAborted)).toBe(2);
+ expect(await worker.evaluate(()=>globalThis.cancelStarted)).toBe(2);
+ for(const label of ['Why this role?','Describe a project','Tell us about your experience'])await expect(popup.getByLabel('Value for '+label)).toHaveValue('');
+});
+
+test('representative Lever, Workday and iCIMS fixtures record independent fill outcomes',async()=>{
+ const profile={firstName:'Alex',lastName:'Example',phone:'5551234567',github:'https://github.com/example',country:'United States',workAuthorizationUS:'Yes',school:'Example University',discipline:'Computer Engineering',degree:"Bachelor's Degree"};
+ for(const ats of ['lever','workday','icims']){
+  await worker.evaluate(profile=>chrome.storage.local.set({profile,resume:null}),profile);
+  const application=await context.newPage();await application.goto(url+'/ats/'+ats);
+  const popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target).id,url+'/ats/'+ats);
+  await worker.evaluate(id=>chrome.tabs.update(id,{active:true}),id);
+  await popup.getByRole('button',{name:'Scan this application'}).click();
+  await popup.getByRole('button',{name:'Fill selected fields'}).click();
+  await expect(popup.locator('#status')).toContainText('Filled 3 of 3');
+  let observations=[],preserved=[];
+  if(ats==='lever'){
+   for(const [field,expected] of [['name','Alex Example'],['phone',profile.phone],['github',profile.github]])observations.push({field,expected,actual:await application.locator('#'+field).inputValue()});
+   preserved=[{field:'email',expected:'existing@example.test',actual:await application.locator('#email').inputValue()}];
+   expect(await application.evaluate(()=>window.submitted)).toBe(false);
+  }else if(ats==='workday'){
+   observations=[{field:'first',expected:'Alex',actual:await application.locator('#first').inputValue()},{field:'country',expected:'United States',actual:await application.locator('#country').textContent()},{field:'authorization',expected:'Yes',actual:await application.locator('[role=radio][aria-checked=true]').textContent()}];
+   preserved=[{field:'last',expected:'Existing',actual:await application.locator('#last').inputValue()}];
+   await application.locator('#next').click();await expect(popup.locator('#changes')).toBeVisible();await popup.getByRole('button',{name:'Rescan changed form'}).click();
+   for(const label of ['School','Field of Study']){await expect(popup.getByRole('checkbox',{name:label,exact:true})).not.toBeChecked();await popup.getByRole('checkbox',{name:label,exact:true}).check();}
+   await popup.getByRole('button',{name:'Fill selected fields'}).click();await expect(popup.locator('#status')).toContainText('Filled 2 of 2');
+   observations.push({field:'school',expected:profile.school,actual:await application.locator('#school').inputValue()},{field:'major',expected:profile.discipline,actual:await application.locator('#major').inputValue()});
+   expect(await application.evaluate(()=>window.submitted)).toBe(false);
+  }else{
+   const frame=application.frameLocator('iframe');
+   for(const [field,expected] of [['first','Alex'],['phone',profile.phone],['degree','bs']])observations.push({field,expected,actual:await frame.locator('#'+field).inputValue()});
+   preserved=[{field:'email',expected:'existing@example.test',actual:await frame.locator('#email').inputValue()}];
+   await expect(frame.locator('#terms')).not.toBeChecked();
+  }
+  recordFixture(ats,observations,preserved);await popup.close();await application.close();
+ }
 });
