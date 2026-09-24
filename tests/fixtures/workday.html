@@ -1,0 +1,16 @@
+<!doctype html><title>Workday-style behavioral fixture v1</title>
+<form data-automation-id="applicationPage">
+<div data-automation-id="formField-firstName"><label for="first">First name</label><input id="first" data-automation-id="legalNameSection_firstName"></div>
+<label>Last name<input id="last" value="Existing"></label>
+<label for="country">Country</label><button type="button" id="country" aria-haspopup="listbox" aria-expanded="false" aria-controls="country-list">Select one</button>
+<div role="listbox" id="country-list" hidden><button type="button" role="option">United States</button><button type="button" role="option">Canada</button></div>
+<div role="radiogroup" aria-label="Are you authorized to work in the US?"><button type="button" role="radio" aria-checked="false">Yes</button><button type="button" role="radio" aria-checked="false">No</button></div>
+<button type="button" id="next">Next</button></form>
+<script>
+window.submitted=false;const form=document.querySelector('form');form.onsubmit=e=>{e.preventDefault();window.submitted=true;};
+const country=document.getElementById('country'),list=document.getElementById('country-list');
+country.onclick=()=>{list.hidden=false;country.setAttribute('aria-expanded','true');};
+for(const option of list.children)option.onclick=()=>{country.textContent=option.textContent;list.hidden=true;country.setAttribute('aria-expanded','false');};
+for(const option of document.querySelectorAll('[role=radio]'))option.onclick=()=>{for(const other of document.querySelectorAll('[role=radio]'))other.setAttribute('aria-checked',String(other===option));};
+document.getElementById('next').onclick=()=>{form.innerHTML='<div data-automation-id="education"><label>School<input id="school"></label><label>Field of Study<input id="major"></label></div><label><input type="checkbox">I certify my answers</label><button>Submit application</button>';};
+</script>

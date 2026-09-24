@@ -1,7 +1,8 @@
 (() => {
   // Replace old listeners when an updated extension is injected without reloading the form.
   if (globalThis.__applyPersonally?.listener) chrome.runtime.onMessage.removeListener(globalThis.__applyPersonally.listener);
-  const fields=new Map();let busy=false;
+  const fields=new Map();let busy=false,baseline='';
+  const identities=new WeakMap();let identity=0;
   const visible=el=>!el.matches(':disabled,[aria-disabled="true"],[aria-readonly="true"]')&&!el.readOnly&&!el.closest('[inert]')&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
   const norm=s=>String(s || '').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   const labelText=node=>{const copy=node.cloneNode(true);copy.querySelectorAll('input,textarea,select,button').forEach(el=>el.remove());return copy.textContent;};
@@ -46,6 +47,12 @@
     return /^(select|choose)( (one|an? option))?(\.\.\.)?$/i.test(textValue)||textValue===el.getAttribute('aria-placeholder')?'':textValue;
   };
   function controls(root=document){return [...root.querySelectorAll(controlSelector),...[...root.querySelectorAll('*')].filter(el=>el.shadowRoot).flatMap(el=>controls(el.shadowRoot))];}
+  function structure(){
+    return JSON.stringify(controls().filter(visible).slice(0,250).map(el=>{
+      if(!identities.has(el))identities.set(el,++identity);
+      return [identities.get(el),label(el),el.type,el.getAttribute('role'),el.getAttribute('aria-haspopup'),el.tagName==='SELECT'?[...el.options].map(o=>[o.value,o.text,o.disabled]):null];
+    }).concat([...document.querySelectorAll('iframe,frame')].map(el=>[el.src])));
+  }
   function scan(){
     if(busy)throw Error('A fill is still running. Wait before scanning again.');
     fields.clear();const seenRadios=new Set();const result=[];
@@ -65,7 +72,7 @@
       fields.set(id,{el,label:label(el),type:el.type,role:el.getAttribute('role'),hasPopup:el.getAttribute('aria-haspopup'),group,control});
       result.push({id,label:question.trim(),tag:el.tagName.toLowerCase(),type:el.type,control,autocomplete:el.autocomplete,value:group?(group.find(r=>r.checked)?.value || ''):selected(el),maxLength:el.maxLength>0?el.maxLength:null,options});
     }
-    return result;
+    baseline=structure();return result;
   }
   function setValue(el,value){const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:el.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}
   function key(el,key,code){el.dispatchEvent(new KeyboardEvent('keydown',{key,code:key,keyCode:code,which:code,bubbles:true}));}
@@ -110,6 +117,30 @@
       el.blur();
     }
   }
+  const currentValue=record=>record.group?(record.group.find(r=>r.checked)?.value || ''):record.el.type==='checkbox'?(record.el.checked?'Yes':'No'):selected(record.el);
+  function retained(record){
+    const el=record.el;
+    return el.isConnected&&label(el)===record.label&&el.type===record.type&&el.getAttribute('role')===record.role&&el.getAttribute('aria-haspopup')===record.hasPopup&&currentValue(record)===record.expected;
+  }
+  function verifySnapshot(results){
+    for(const result of results)if(result.ok){const record=fields.get(result.id);if(!record||!retained(record)){result.ok=false;result.reason='The answer changed or the field was replaced after filling. Review it and rescan; no retry was made.';}}
+    return results;
+  }
+  async function verifySettled(results){
+    // A bounded observation window, not a promise about arbitrary future network activity.
+    const start=performance.now();let changedAt=start;
+    const observer=new MutationObserver(()=>{changedAt=performance.now();});
+    observer.observe(document,{subtree:true,childList:true,attributes:true,characterData:true});
+    for(const el of controls())if(el.getRootNode() instanceof ShadowRoot)observer.observe(el.getRootNode(),{subtree:true,childList:true,attributes:true,characterData:true});
+    try{
+      while(performance.now()-start<4000){
+        await pause(100);verifySnapshot(results);
+        if(performance.now()-start>=1500&&performance.now()-changedAt>=500)return results;
+      }
+      for(const result of results)if(result.ok){result.ok=false;result.reason='The page is still updating. Could not verify a settled answer; review it and rescan.';}
+      return results;
+    }finally{observer.disconnect();}
+  }
   async function apply(items,resume){
     if(busy)throw Error('A fill is already running.');busy=true;const results=[];
     try{for(const item of items){
@@ -151,14 +182,19 @@
           setValue(el,item.value);
           if(el.value!==item.value)throw Error('The page did not keep this value. Review the field.');
         }
+        record.expected=currentValue(record);
         results.push({id:item.id,ok:true,selectedValue:item.selectedValue});
       }catch(error){results.push({id:item.id,ok:false,reason:error.message});}
-    }}finally{busy=false;}return results;
+    }
+    if(results.some(r=>r.ok))await verifySettled(results);
+    }finally{busy=false;}return results;
   }
   function jobContext(){const main=document.querySelector('main');if(!main)return '';const text=main.innerText, marker=text.search(/Apply for this job/i);return marker>=0?text.slice(0,marker).slice(0,12000):'';}
   const listener=(message,sender,reply)=>{
     if(sender.id!==chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL('')))return;
     if(message.type==='scan'){try{reply({fields:scan(),title:document.title,url:location.href,context:jobContext(),embeddedCount:document.querySelectorAll('iframe,frame').length});}catch(error){reply({error:error.message});}}
+    if(message.type==='inspect'){reply({changed:!baseline||structure()!==baseline,busy});}
+    if(message.type==='verify'){reply({results:verifySnapshot((message.ids||[]).map(id=>({id,ok:true})))});}
     if(message.type==='apply'){apply(message.items,message.resume).then(results=>reply({results}),error=>reply({error:error.message}));return true;}
   };
   globalThis.__applyPersonally={listener};chrome.runtime.onMessage.addListener(listener);
