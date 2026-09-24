@@ -7,7 +7,7 @@ export const profileFields = {
 export const allProfileFields={...profileFields,...educationFields,...preferenceFields};
 const rules = [
   ['firstName', /\b(first|given) name\b/], ['lastName', /\b(last|family|sur) ?name\b/],
-  ['fullName', /^(full |legal |your )?name$/], ['email', /\be ?mail\b/],
+  ['fullName', /^(full legal |full |legal |your )?name$/], ['email', /\be ?mail\b/],
   ['phone', /\b(phone|mobile|telephone)\b/], ['address2', /\b(address.*(2|two)|apartment|suite)\b/],
   ['address', /\b(street address|address line 1|address1|mailing address)\b|^address$/],
   ['city', /\b(city|town)\b/], ['state', /^(state|province|state province|state or province)$/],
@@ -22,6 +22,7 @@ export function isSensitive(label) {
 export function savedFieldKey(field) {
   const l=normalize(field.label);
   if (/^(school|university|college)( name)?$/.test(l)) return 'school';
+  if (/^(still student|currently enrolled|are you currently a student)$/.test(l))return 'currentlyStudent';
   if (/^(degree|degree level|degree type|highest degree)$/.test(l)) return 'degree';
   if (/^(discipline|major|field of study|primary major)$/.test(l)) return 'discipline';
   if (/^(education )?start date month$|^start month$/.test(l)) return 'educationStartMonth';
@@ -30,7 +31,7 @@ export function savedFieldKey(field) {
   if (/^(education )?end date year$|^(graduation|expected graduation) year$/.test(l)) return 'educationEndYear';
   if (/^(are you )?(looking for|seeking|interested in) (a )?(summer )?internship$/.test(l))return 'seekingInternship';
   if (/^are you (legally )?(authorized|eligible) to work in (the )?(us|u s|united states)$/.test(l))return 'workAuthorizationUS';
-  if (/^will you .*require sponsorship|^do you (now or in the future )?(need|require) .*sponsorship|^visa sponsorship$/.test(l))return 'sponsorship';
+  if (/^requesting visa sponsorship$|^will you .*require sponsorship|^do you (now or in the future )?(need|require) .*sponsorship|^visa sponsorship$/.test(l))return 'sponsorship';
   if (/^(are you )?(at least |age )?18 (years (of age |old )?)?(or older|or over)$|^are you over 18$/.test(l))return 'over18';
   if (/^(age|your age)$/.test(l))return 'age';
   if (/^(gender|what is your gender|gender identity|sex)$/.test(l))return 'gender';
@@ -68,6 +69,7 @@ export function equivalent(a,b,key) {
   return false;
 }
 export function fallbackValues(key,value,profile={}) {
+  if(key==='school' && normalize(value)==='university of michigan ann arbor')return ['University of Michigan'];
   if(key==='discipline' && /engineering$/i.test(value) && normalize(value)!=='engineering')return ['Engineering'];
   if(key==='race' && profile.hispanicLatino==='No' && normalize(value)==='asian')return ['Asian (Not Hispanic or Latino)'];
   return [];
@@ -94,5 +96,5 @@ export function suggestion(field, profile) {
 }
 export function canDraft(field) {
   return !classify(field) && !isSensitive(field.label) && field.type !== 'file' && !field.options &&
-    (field.tag === 'textarea' || /\b(why|describe|looking for|tell us|motivation|interest|experience|strength|cover letter)\b/i.test(field.label));
+    (field.tag === 'textarea' || /\b(why|describe|looking for|tell us|motivation|interest|experience|strength|cover letter|share something.*built)\b/i.test(field.label));
 }

@@ -26,3 +26,18 @@ test('resume education inference never invents a start date or disclosures',()=>
  const facts=inferEducation('EDUCATION\nExample University\nBachelor of Science, Computer Engineering May 2028\nEXPERIENCE\nEngineer');
  assert.equal(facts.school,'Example University');assert.equal(facts.discipline,'Computer Engineering');assert.equal(facts.educationEndYear,'2028');assert.equal(facts.educationStartYear,undefined);assert.equal(facts.gender,undefined);
 });
+
+test('Ashby labels use saved answers without inventing missing dates or preferences',()=>{
+ const profile={firstName:'Alex',lastName:'Example',sponsorship:'No',currentlyStudent:'Yes',educationEndMonth:'May',educationEndYear:'2028'};
+ assert.equal(suggestion({label:'Full Legal Name'},profile),'Alex Example');
+ assert.equal(suggestion({label:'Requesting visa sponsorship?',options:[{value:'yes',label:'Yes'},{value:'no',label:'No'}]},profile),'no');
+ assert.equal(suggestion({label:'Requesting visa sponsorship?'},{}),'');
+ assert.equal(suggestion({label:'Still Student?'},profile),'Yes');
+ assert.equal(suggestion({label:'Still Student?'},{educationEndYear:'2028'}),'');
+ assert.equal(suggestion({label:'What is your graduation date?'},profile),'');
+ assert.equal(suggestion({label:'Willing to relocate to NYC?'},profile),'');
+ assert.equal(canDraft({label:'Share something you’ve built that you’re proud of.',tag:'input',type:'text'}),true);
+ const school={label:'School',options:[{value:'main',label:'University of Michigan'},{value:'flint',label:'University of Michigan–Flint'}]};
+ assert.equal(suggestion(school,{school:'University of Michigan - Ann Arbor'}),'main');
+ assert.equal(suggestion({...school,options:school.options.slice(1)},{school:'University of Michigan - Ann Arbor'}),'');
+});

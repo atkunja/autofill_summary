@@ -25,7 +25,9 @@ function render(field, profile) {
     editor.value=field.value || value;editor.disabled=!eligible;
     if(field.maxLength)editor.maxLength=field.maxLength;
     card.append(editor);
+    if(!field.value && !value && kind){const saved=suggestion({...field,options:null},profile);card.append(make('small',saved?`Saved answer “${saved}” is not offered by this form. Choose an option manually.`:'No saved answer. Add it in Profile or enter it here.'));}
     if(field.value)card.append(make('small','Already filled — left unchanged.'));
+    else if(!value && !kind && !canDraft(field))card.append(make('small',/graduation date/i.test(field.label)?'Your resume may give a month and year; this field needs an exact date. Enter it manually.':'No saved answer matches this question. Enter your answer here or on the form.'));
     else if(canDraft(field)) {
       const button=make('button','Generate AI draft');button.type='button';
       button.onclick=async()=>{

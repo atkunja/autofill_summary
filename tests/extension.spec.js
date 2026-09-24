@@ -12,7 +12,8 @@ test.beforeAll(async()=>{
   // Test-only localhost permission substitutes for clicking Chrome's toolbar action.
   manifest.host_permissions.push('http://127.0.0.1/*','https://example.com/*');await writeFile(path.join(ext,'manifest.json'),JSON.stringify(manifest));
   const fixtureBundle=(await build({entryPoints:['tests/fixtures/greenhouse.jsx'],bundle:true,write:false,format:'iife'})).outputFiles[0].text;
-  server=http.createServer((req,res)=>{if(req.url==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(fixtureBundle);return;}if(req.url.startsWith('/greenhouse')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Greenhouse fixture</title><div id="root"></div><script src="/fixture.js"></script>');return;}res.setHeader('Content-Type','text/html');res.end(`<!doctype html><title>Example application</title><form><label>First name<input id="first" autocomplete="given-name"></label><label>Email<input id="email" type="email" value="existing@example.test"></label><label>State<select id="state"><option value="">Choose</option><option value="MI">Michigan</option></select></label><label>Resume<input id="resume" type="file" accept=".txt"></label><label>Why this company?<textarea id="why"></textarea></label><label>Gender<textarea id="gender"></textarea></label><input id="hidden" style="display:none"><button type="submit">Submit application</button></form><script>window.submitted=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submitted=true};</script>`);});
+  const ashbyBundle=(await build({entryPoints:['tests/fixtures/ashby.jsx'],bundle:true,write:false,format:'iife'})).outputFiles[0].text;
+  server=http.createServer((req,res)=>{if(req.url==='/ashby.js'){res.setHeader('Content-Type','text/javascript');res.end(ashbyBundle);return;}if(req.url.startsWith('/ashby')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Ashby fixture</title><div id="root"></div><script src="/ashby.js"></script>');return;}if(req.url==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(fixtureBundle);return;}if(req.url.startsWith('/greenhouse')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Greenhouse fixture</title><div id="root"></div><script src="/fixture.js"></script>');return;}res.setHeader('Content-Type','text/html');res.end(`<!doctype html><title>Example application</title><form><label>First name<input id="first" autocomplete="given-name"></label><label>Email<input id="email" type="email" value="existing@example.test"></label><label>State<select id="state"><option value="">Choose</option><option value="MI">Michigan</option></select></label><label>Resume<input id="resume" type="file" accept=".txt"></label><label>Why this company?<textarea id="why"></textarea></label><label>Gender<textarea id="gender"></textarea></label><input id="hidden" style="display:none"><button type="submit">Submit application</button></form><script>window.submitted=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submitted=true};</script>`);});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));url=`http://127.0.0.1:${server.address().port}`;
   context=await chromium.launchPersistentContext(path.join(temp,'profile'),{channel:'chromium',headless:true,args:[`--disable-extensions-except=${ext}`,`--load-extension=${ext}`]});
   worker=context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');extensionId=new URL(worker.url()).host;
@@ -166,4 +167,35 @@ test('a stale preview cannot target new field IDs after script reinjection',asyn
   return chrome.tabs.sendMessage(id,{type:'apply',items:[{id:old.id,value:'Stale value'}]});
  },id);
  expect(result.results[0].ok).toBe(false);await expect(application.locator('#first')).toHaveValue('');
+});
+
+test('Ashby nested education, canonical school options and answer buttons fill through preview',async()=>{
+  await worker.evaluate(()=>chrome.storage.local.set({profile:{firstName:'Alex',lastName:'Example',school:'University of Michigan - Ann Arbor',degree:"Bachelor's Degree",discipline:'Computer Engineering',educationEndMonth:'May',educationEndYear:'2028',currentlyStudent:'Yes',sponsorship:'No'}}));
+  const application=await context.newPage();await application.goto(url+'/ashby');
+  const popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target+'/ashby').id,url);
+  await worker.evaluate(id=>chrome.tabs.update(id,{active:true}),id);
+  await popup.getByRole('button',{name:'Scan this application'}).click();
+  await expect(popup.getByLabel('Value for Full Legal Name')).toHaveValue('Alex Example');
+  await expect(popup.getByLabel('Value for School',{exact:true})).toHaveValue('University of Michigan - Ann Arbor');
+  await expect(popup.getByLabel('Value for Requesting visa sponsorship?')).toHaveValue('no');
+  await expect(popup.getByText('Saved answer “2028” is not offered', {exact:false})).toBeVisible();
+  await expect(popup.getByLabel('Value for Start Date Year')).toHaveValue('');
+  await expect(popup.getByLabel('Value for What is your graduation date?')).toHaveValue('');
+  await expect(popup.getByRole('button',{name:'Generate AI draft'})).toBeVisible();
+  await expect(popup.getByText('Autofill from resume',{exact:true})).toHaveCount(0);
+  await popup.getByRole('button',{name:'Fill selected fields'}).click();
+  await expect(popup.locator('#status')).toContainText('Filled 8 of 8');
+  await expect(application.getByRole('combobox',{name:'Search schools...'})).toHaveValue('University of Michigan');
+  await expect(application.locator('#degree')).toHaveValue("Bachelor's Degree");
+  await expect(application.locator('#major')).toHaveValue('Computer Engineering');
+  await expect(application.locator('button[data-option=no][aria-pressed=true]')).toHaveCount(1);
+  await expect(application.getByLabel('Still Student?')).toBeChecked();
+  await expect(application.getByLabel('I agree to terms')).not.toBeChecked();
+  await expect(application.locator('input[name=communicationConsent]')).not.toBeChecked();
+  expect(await application.evaluate(()=>!!window.submitted)).toBe(false);
+  // A second scan must preserve committed school and No answers.
+  await popup.getByRole('button',{name:'Scan this application'}).click();
+  await expect(popup.getByLabel('Value for School',{exact:true})).toBeDisabled();
+  await expect(popup.getByLabel('Value for Requesting visa sponsorship?')).toBeDisabled();
 });
