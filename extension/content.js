@@ -5,19 +5,34 @@
   const visible=el=>!el.matches(':disabled')&&!el.readOnly&&!el.closest('[inert]')&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
   const norm=s=>String(s || '').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   const labelText=node=>{const copy=node.cloneNode(true);copy.querySelectorAll('input,textarea,select,button').forEach(el=>el.remove());return copy.textContent;};
-  const label=el=>[Array.from(el.labels || []).map(labelText).join(' '),el.getAttribute('aria-label'),(el.getAttribute('aria-labelledby') || '').split(' ').map(id=>el.getRootNode().getElementById?.(id)?.textContent || '').join(' '),el.placeholder,el.name,el.id].find(s=>s?.trim())?.trim().slice(0,500) || 'Unlabeled field';
+  // Ashby visually labels nested controls without associating the label with the input.
+  function ashbyLabel(el){
+    if(!el.closest('.ashby-application-form-field-entry'))return '';
+    for(let parent=el.parentElement;parent;parent=parent.parentElement){
+      const title=parent.querySelector(':scope > .ashby-application-form-question-title');
+      if(title){
+        const part=el.tagName==='SELECT'?el.options[0]?.text.match(/^(Month|Year)/i)?.[1]:'';
+        return [labelText(title),part].filter(Boolean).join(' ');
+      }
+      if(parent.matches('.ashby-application-form-field-entry'))break;
+    }
+    return '';
+  }
+  const label=el=>[Array.from(el.labels || []).map(labelText).join(' '),el.getAttribute('aria-label'),(el.getAttribute('aria-labelledby') || '').split(' ').map(id=>el.getRootNode().getElementById?.(id)?.textContent || '').join(' '),ashbyLabel(el),el.placeholder,el.name,el.id].find(s=>s?.trim())?.trim().slice(0,500) || 'Unlabeled field';
   const comboRoot=el=>el.closest('.select__control,[class$="-control"]');
   const selected=el=>{
+    if(el.matches('.ashby-application-form-input-yesno'))return el.querySelector('button[aria-pressed="true"]')?.dataset.option || '';
+    if(el.type==='checkbox')return el.checked?'Yes':'';
     if(el.getAttribute('role')!=='combobox')return el.type==='file'?(el.files[0]?.name || ''):el.value || '';
     const text=comboRoot(el)?.querySelector('.select__single-value,[class*="-singleValue"]')?.textContent || el.getAttribute('aria-valuetext');
     if(text)return text.trim();
     return el.value || '';
   };
-  function controls(root=document){return [...root.querySelectorAll('input,textarea,select,[role="combobox"]'),...[...root.querySelectorAll('*')].filter(el=>el.shadowRoot).flatMap(el=>controls(el.shadowRoot))];}
+  function controls(root=document){return [...root.querySelectorAll('input,textarea,select,[role="combobox"],.ashby-application-form-input-yesno'),...[...root.querySelectorAll('*')].filter(el=>el.shadowRoot).flatMap(el=>controls(el.shadowRoot))];}
   function scan(){
     if(busy)throw Error('A fill is still running. Wait before scanning again.');
     fields.clear();const seenRadios=new Set();const result=[];
-    for(const el of [...new Set(controls())].filter(el=>visible(el)&&(el.tagName!=='INPUT'||['text','email','tel','url','file','search','number','date','month','radio'].includes(el.type))).slice(0,150)){
+    for(const el of [...new Set(controls())].filter(el=>visible(el)&&!el.closest('.ashby-application-form-autofill-input-root')&&(el.tagName!=='INPUT'||['text','email','tel','url','file','search','number','date','month','radio'].includes(el.type)||(el.type==='checkbox'&&el.id==='_systemfield_education_history-isCurrent'))).slice(0,150)){
       let group,question=label(el),options=el.tagName==='SELECT'?[...el.options].map(o=>({value:o.value,label:o.text,disabled:o.disabled})):null;
       if(el.type==='radio'){
         if(seenRadios.has(el))continue;
@@ -26,7 +41,9 @@
         question=el.closest('fieldset')?.querySelector('legend')?.textContent || el.closest('[role="radiogroup"]')?.getAttribute('aria-label') || el.name;
         options=group.map(r=>({value:r.value,label:label(r),disabled:r.disabled}));
       }
-      const id=crypto.randomUUID(), control=el.getAttribute('role')==='combobox'?'combobox':el.type==='radio'?'radio':'native';
+      if(el.matches('.ashby-application-form-input-yesno'))options=[...el.querySelectorAll('button[data-option]')].map(b=>({value:b.dataset.option,label:b.textContent,disabled:b.disabled}));
+      if(el.type==='checkbox')options=[{value:'Yes',label:'Yes'},{value:'No',label:'No'}];
+      const id=crypto.randomUUID(), control=el.matches('.ashby-application-form-input-yesno')?'yesno':el.type==='checkbox'?'checkbox':el.getAttribute('role')==='combobox'?'combobox':el.type==='radio'?'radio':'native';
       fields.set(id,{el,label:label(el),type:el.type,group,control});
       result.push({id,label:question.trim(),tag:el.tagName.toLowerCase(),type:el.type,control,autocomplete:el.autocomplete,value:group?(group.find(r=>r.checked)?.value || ''):selected(el),maxLength:el.maxLength>0?el.maxLength:null,options});
     }
@@ -36,7 +53,7 @@
   function key(el,key,code){el.dispatchEvent(new KeyboardEvent('keydown',{key,code:key,keyCode:code,which:code,bubbles:true}));}
   const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   async function fillCombo(el,value){
-    const original=selected(el);
+    const original=selected(el);let committed=false;
     if(original)throw Error('Already contains a value; left unchanged.');
     el.focus();el.click();
     if(el instanceof HTMLInputElement)setValue(el,value);
@@ -49,7 +66,7 @@
         const ids=(el.getAttribute('aria-controls')||el.getAttribute('aria-owns')||'').split(' ').filter(Boolean);
         const lists=ids.map(id=>root.getElementById?.(id)).filter(Boolean);
         if(!lists.length){const local=comboRoot(el)?.parentElement?.querySelector('[role="listbox"]');if(local)lists.push(local);}
-        const matches=lists.flatMap(list=>[...list.querySelectorAll('[role="option"]')]).filter(o=>o.getAttribute('aria-disabled')!=='true'&&norm(o.textContent)===norm(value));
+        const matches=lists.flatMap(list=>[...list.querySelectorAll('[role="option"]')]).filter(o=>o.getAttribute('aria-disabled')!=='true'&&visible(o)&&norm(o.querySelector('[class*="_canonicalSchoolResultName_"]')?.textContent || o.textContent)===norm(value));
         if(matches.length>1)throw Error('Several options match. Select this field manually.');
         if(matches.length===1){match=matches[0];break;}
         if(i>10 && lists.some(list=>/no (options|results)/i.test(list.textContent)))break;
@@ -60,13 +77,13 @@
       for(let i=0;i<20;i++){
         await pause(50);
         const text=comboRoot(el)?.querySelector('.select__single-value,[class*="-singleValue"]')?.textContent || el.getAttribute('aria-valuetext');
-        if(norm(text)===norm(value))return;
-        if(!comboRoot(el)&&el.getAttribute('aria-expanded')==='false'&&norm(el.value)===norm(value))return;
+        if(norm(text)===norm(value)){committed=true;return;}
+        if(!comboRoot(el)&&el.getAttribute('aria-expanded')==='false'&&norm(el.value)===norm(value)){committed=true;return;}
       }
       throw Error('Could not verify the selected option. Review this field on the page.');
     } finally {
       key(el,'Escape',27);
-      if(el instanceof HTMLInputElement && !comboRoot(el)?.querySelector('.select__single-value,[class*="-singleValue"]') && !el.getAttribute('aria-valuetext'))setValue(el,'');
+      if(!committed && el instanceof HTMLInputElement && !comboRoot(el)?.querySelector('.select__single-value,[class*="-singleValue"]') && !el.getAttribute('aria-valuetext'))setValue(el,'');
       el.blur();
     }
   }
@@ -81,7 +98,20 @@
           const choices=[item.value,...(Array.isArray(item.alternatives)?item.alternatives.slice(0,3):[])];
           for(let i=0;i<choices.length;i++){try{await fillCombo(el,choices[i]);item.selectedValue=choices[i];break;}catch(error){if(i===choices.length-1||!error.message.startsWith('No exact dropdown'))throw error;}}
         }
-        else if(record.group){
+        else if(record.control==='yesno'){
+          const matches=[...el.querySelectorAll('button[data-option]')].filter(b=>b.dataset.option===item.value&&visible(b));
+          if(matches.length!==1)throw Error('Option no longer available.');
+          // Some answer buttons omit type=button. Block their native submit default.
+          const blockSubmit=event=>{event.preventDefault();event.stopImmediatePropagation();};
+          document.addEventListener('submit',blockSubmit,true);
+          try{matches[0].click();}finally{document.removeEventListener('submit',blockSubmit,true);}
+          await pause(50);
+          if(selected(el)!==item.value)throw Error('Yes/No selection did not stick.');
+        }else if(record.control==='checkbox'){
+          if(!['Yes','No'].includes(item.value))throw Error('Choose Yes or No.');
+          if(el.checked!==(item.value==='Yes'))el.click();
+          if(el.checked!==(item.value==='Yes'))throw Error('Checkbox selection did not stick.');
+        }else if(record.group){
           const matches=record.group.filter(r=>r.value===item.value&&r.isConnected&&visible(r));if(matches.length!==1)throw Error('Option no longer available.');matches[0].click();if(!matches[0].checked)throw Error('Radio selection did not stick.');
         }else if(el.type==='file'){
           if(!resume||item.kind!=='resume')throw Error('No resume selected.');

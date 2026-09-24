@@ -1,6 +1,6 @@
 export const educationFields = {school:'School / university',degree:'Degree level',discipline:'Discipline / major',educationStartMonth:'Education start month',educationStartYear:'Education start year',educationEndMonth:'Graduation month',educationEndYear:'Graduation year'};
-export const preferenceFields = {seekingInternship:'Seeking a summer internship',workAuthorizationUS:'Authorized to work in the US',sponsorship:'Need employment visa sponsorship',over18:'Age 18 or older',age:'Age (optional; update as needed)',gender:'Gender',hispanicLatino:'Hispanic / Latino',race:'Race',veteranStatus:'Veteran status'};
-export const yesNoFields=['seekingInternship','workAuthorizationUS','sponsorship','over18','hispanicLatino'];
+export const preferenceFields = {currentlyStudent:'Currently a student',seekingInternship:'Seeking a summer internship',workAuthorizationUS:'Authorized to work in the US',sponsorship:'Need employment visa sponsorship',over18:'Age 18 or older',age:'Age (optional; update as needed)',gender:'Gender',hispanicLatino:'Hispanic / Latino',race:'Race',veteranStatus:'Veteran status'};
+export const yesNoFields=['currentlyStudent','seekingInternship','workAuthorizationUS','sponsorship','over18','hispanicLatino'];
 export const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
 export function inferEducation(text='') {
   const section=text.split(/\bEDUCATION\b/i)[1]?.split(/\b(EXPERIENCE|PROJECTS|SKILLS|EMPLOYMENT)\b/i)[0] || '';
