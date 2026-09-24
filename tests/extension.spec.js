@@ -43,3 +43,27 @@ test('rejects stale fields and values entered after scanning',async()=>{
   const result=await worker.evaluate(({id,fields})=>chrome.tabs.sendMessage(id,{type:'apply',items:fields.filter(f=>['First name','Why this company?'].includes(f.label)).map(f=>({id:f.id,value:'Replacement'}))}),{id,fields});
   expect(result.results.every(r=>!r.ok)).toBe(true);await expect(page.locator('#first')).toHaveValue('Human entry');
 });
+test('AI draft requires explicit selection and credentials stay out of content scripts',async()=>{
+  await worker.evaluate(async()=>{
+    await chrome.storage.local.set({profile:{background:'Built internal tools.',goals:'Build reliable software.'}});
+    await chrome.storage.session.set({apiKey:'test-key-not-real'});
+    globalThis.fetch=async(url,options)=>{globalThis.lastRequest=JSON.parse(options.body);return {ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:'I want to bring my experience building internal tools to this role.'}]}]})};};
+  });
+  const application=await context.newPage();await application.goto(url+'/?draft');
+  const popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target+'/?draft').id,url);
+  await worker.evaluate(id=>chrome.tabs.update(id,{active:true}),id);
+  await popup.getByRole('button',{name:'Scan this application'}).click();
+  await popup.locator('summary').click();await popup.locator('#context').fill('Example company needs internal tools.');
+  await popup.getByRole('button',{name:'Generate AI draft'}).click();
+  await expect(popup.locator('#status')).toContainText('Draft ready');
+  const row=popup.locator('.field').filter({hasText:'Why this company?'});
+  await expect(row.locator('input[type=checkbox]')).not.toBeChecked();
+  await row.locator('textarea').fill('An answer I reviewed myself.');await row.locator('input[type=checkbox]').check();
+  await popup.getByRole('button',{name:'Fill selected fields'}).click();await expect(application.locator('#why')).toHaveValue('An answer I reviewed myself.');
+  expect((await worker.evaluate(()=>globalThis.lastRequest)).store).toBe(false);
+  const privacy=await worker.evaluate(async id=>(await chrome.scripting.executeScript({target:{tabId:id},func:async()=>{
+    try {await chrome.storage.local.get('profile');return false;}catch{return true;}
+  }}))[0].result,id);expect(privacy).toBe(true);
+  await popup.screenshot({path:'test-results/popup.png'});
+});
