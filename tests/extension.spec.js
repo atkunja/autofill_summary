@@ -1,3 +1,4 @@
+import {build} from 'esbuild';
 import {test,expect,chromium} from '@playwright/test';
 import {mkdtemp,cp,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -10,7 +11,8 @@ test.beforeAll(async()=>{
   const manifest=JSON.parse(await readFile(path.join(ext,'manifest.json'),'utf8'));
   // Test-only localhost permission substitutes for clicking Chrome's toolbar action.
   manifest.host_permissions.push('http://127.0.0.1/*','https://example.com/*');await writeFile(path.join(ext,'manifest.json'),JSON.stringify(manifest));
-  server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end(`<!doctype html><title>Example application</title><form><label>First name<input id="first" autocomplete="given-name"></label><label>Email<input id="email" type="email" value="existing@example.test"></label><label>State<select id="state"><option value="">Choose</option><option value="MI">Michigan</option></select></label><label>Resume<input id="resume" type="file" accept=".txt"></label><label>Why this company?<textarea id="why"></textarea></label><label>Gender<textarea id="gender"></textarea></label><input id="hidden" style="display:none"><button type="submit">Submit application</button></form><script>window.submitted=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submitted=true};</script>`);});
+  const fixtureBundle=(await build({entryPoints:['tests/fixtures/greenhouse.jsx'],bundle:true,write:false,format:'iife'})).outputFiles[0].text;
+  server=http.createServer((req,res)=>{if(req.url==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(fixtureBundle);return;}if(req.url.startsWith('/greenhouse')){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Greenhouse fixture</title><div id="root"></div><script src="/fixture.js"></script>');return;}res.setHeader('Content-Type','text/html');res.end(`<!doctype html><title>Example application</title><form><label>First name<input id="first" autocomplete="given-name"></label><label>Email<input id="email" type="email" value="existing@example.test"></label><label>State<select id="state"><option value="">Choose</option><option value="MI">Michigan</option></select></label><label>Resume<input id="resume" type="file" accept=".txt"></label><label>Why this company?<textarea id="why"></textarea></label><label>Gender<textarea id="gender"></textarea></label><input id="hidden" style="display:none"><button type="submit">Submit application</button></form><script>window.submitted=false;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submitted=true};</script>`);});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));url=`http://127.0.0.1:${server.address().port}`;
   context=await chromium.launchPersistentContext(path.join(temp,'profile'),{channel:'chromium',headless:true,args:[`--disable-extensions-except=${ext}`,`--load-extension=${ext}`]});
   worker=context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');extensionId=new URL(worker.url()).host;
@@ -130,4 +132,27 @@ test('reading a project link updates reviewable source text and saves it',async(
   expect(await options.getByLabel('Imported source text (editable)').inputValue()).toContain('reliable API workflows');
   await options.getByLabel('Project link (website or GitHub repository)').fill('https://example.com/other');
   expect(await options.getByLabel('Imported source text (editable)').inputValue()).toBe('');
+});
+
+test('fills React Select education, saved disclosures, graduation questions, and radios',async()=>{
+ const profile={school:'Example University - Main',degree:"Bachelor's Degree",discipline:'Computer Engineering',educationEndMonth:'May',educationEndYear:'2028',seekingInternship:'Yes',workAuthorizationUS:'Yes',sponsorship:'No',over18:'Yes',gender:'Female',race:'Asian',hispanicLatino:'No',veteranStatus:'I am not a protected veteran'};
+ await worker.evaluate(profile=>chrome.storage.local.set({profile}),profile);
+ const application=await context.newPage();await application.goto(url+'/greenhouse');await expect(application.getByRole('combobox',{name:'School',exact:true})).toBeVisible();
+ const popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+ const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target+'/greenhouse').id,url);await worker.evaluate(id=>chrome.tabs.update(id,{active:true}),id);
+ await popup.getByRole('button',{name:'Scan this application'}).click();
+ await expect(popup.getByLabel('Value for Gender',{exact:true})).toHaveValue('Male');await expect(popup.getByLabel('Value for Gender',{exact:true})).toBeDisabled();
+ await popup.getByRole('button',{name:'Fill selected fields'}).click();await expect(popup.locator('#status')).toContainText('Filled 13 of 13',{timeout:20000});
+ const values=JSON.parse(await application.locator('#values').textContent());
+ expect(values.school.label).toBe('Example University - Main');expect(values.major.label).toBe('Computer Engineering');expect(values.graduation.label).toBe('No');expect(values.internship.label).toBe('Yes');expect(values.authorization.label).toBe('Yes');expect(values.sponsor.label).toBe('No');expect(values.gender.label).toBe('Male');expect(values.race.label).toBe('Asian');expect(values.ethnicity.label).toBe('No');expect(values.veteran.label).toBe('I am not a protected veteran');
+ await expect(application.locator('#end-year')).toHaveValue('2028');await expect(application.locator('input[name=adult][value=yes]')).toBeChecked();await expect(application.locator('#consent')).not.toBeChecked();
+ expect(await popup.locator('#context').inputValue()).toContain('reliable connectivity');
+});
+
+test('falls back to the broader Engineering option only when the precise major is absent',async()=>{
+ const application=await context.newPage();await application.goto(url+'/greenhouse?generic');await expect(application.getByRole('combobox',{name:'Discipline',exact:true})).toBeVisible();
+ const id=await worker.evaluate(async target=>(await chrome.tabs.query({})).find(t=>t.url===target+'/greenhouse?generic').id,url);
+ const field=await worker.evaluate(async id=>{await chrome.scripting.executeScript({target:{tabId:id},files:['content.js']});return (await chrome.tabs.sendMessage(id,{type:'scan'})).fields.find(f=>f.label==='Discipline');},id);
+ const result=await worker.evaluate(({id,field})=>chrome.tabs.sendMessage(id,{type:'apply',items:[{id:field.id,value:'Computer Engineering',alternatives:['Engineering']}]}),{id,field});
+ expect(result.results[0].ok).toBe(true);expect(result.results[0].selectedValue).toBe('Engineering');expect(JSON.parse(await application.locator('#values').textContent()).major.label).toBe('Engineering');
 });
