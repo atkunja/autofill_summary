@@ -4,7 +4,8 @@
   const fields = new Map();
   let counter = 0;
   const visible = el => !el.disabled && !el.readOnly && !el.closest('[inert]') && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
-  const label = el => [Array.from(el.labels || []).map(l => l.textContent).join(' '),
+  const labelText = node => {const copy=node.cloneNode(true);copy.querySelectorAll('input,textarea,select,button').forEach(el=>el.remove());return copy.textContent;};
+  const label = el => [Array.from(el.labels || []).map(labelText).join(' '),
     el.getAttribute('aria-label'), (el.getAttribute('aria-labelledby') || '').split(' ').map(id => document.getElementById(id)?.textContent || '').join(' '),
     el.placeholder, el.name, el.id].find(s => s?.trim())?.trim().slice(0, 500) || 'Unlabeled field';
   function controls(root = document) {

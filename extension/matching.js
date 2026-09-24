@@ -10,7 +10,7 @@ const rules = [
   ['address', /\b(street address|address line 1|address1|mailing address)\b|^address$/],
   ['city', /\b(city|town)\b/], ['state', /^(state|province|state province|state or province)$/],
   ['postalCode', /\b(zip|postal)\b/], ['country', /^country( of residence)?$/],
-  ['linkedin', /linkedin/], ['website', /\b(portfolio|website|personal site)\b/]
+  ['linkedin', /linked ?in/], ['website', /\b(portfolio|website|personal site)\b/]
 ];
 const autocomplete = {'given-name':'firstName','family-name':'lastName',name:'fullName',email:'email',tel:'phone','street-address':'address','address-line1':'address','address-line2':'address2','address-level2':'city','address-level1':'state','postal-code':'postalCode','country-name':'country',country:'country',url:'website'};
 export function normalize(s = '') { return s.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }

@@ -31,6 +31,7 @@ function render(field, profile) {
         button.disabled=true;status('Drafting with your experience, goals, question, and supplied job context…');
         try {
           const result=await chrome.runtime.sendMessage({type:'draft',args:{question:field.label,context:$('context').value,maxLength:field.maxLength}});
+          if(!result)throw Error('Could not reach the extension. Reload it and try again.');
           if(result.error)throw Error(result.error);
           editor.value=result.answer;check.checked=false;
           status('Draft ready. Edit it, then select its checkbox to approve filling.' + (field.maxLength && result.answer.length>field.maxLength?' Shorten it to fit the character limit.':''));

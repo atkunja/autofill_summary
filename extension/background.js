@@ -5,7 +5,7 @@ const ready = Promise.all([
   chrome.storage.session.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'})
 ]);
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
-  if (sender.id !== chrome.runtime.id || sender.tab || !sender.url?.startsWith(chrome.runtime.getURL(''))) return;
+  if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL(''))) return;
   if (message.type !== 'draft') return;
   (async () => {
     await ready;
