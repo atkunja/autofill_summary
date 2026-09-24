@@ -1,6 +1,6 @@
 {
   "name": "autofill-summary",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,10 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
-    "pdfjs-dist": "6.3.289"
+    "esbuild": "^0.28.2",
+    "pdfjs-dist": "6.3.289",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-select": "^5.10.2"
   }
 }

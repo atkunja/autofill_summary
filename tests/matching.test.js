@@ -12,7 +12,7 @@ test('uses exact dropdown options and never guesses',()=>{
   assert.equal(suggestion(field,{state:'Michigan'}),'MI');assert.equal(suggestion(field,{state:'CA'}),'');assert.equal(suggestion(field,{state:'New York'}),'');
 });
 test('sensitive and ambiguous fields stay manual',()=>{
-  for(const label of ['Visa sponsorship','Gender','Salary expectations','Social security number','Citizenship','Disability','Work authorization','Are you legally eligible to work?','Sexual orientation','Preferred pronouns']){assert.equal(classify({label}),null);assert.equal(canDraft({label,tag:'textarea'}),false);}
+  for(const label of ['Visa sponsorship','Gender','Salary expectations','Social security number','Citizenship','Disability','Work authorization','Are you legally eligible to work?','Sexual orientation','Preferred pronouns']){assert.equal(suggestion({label},{}),'');assert.equal(canDraft({label,tag:'textarea'}),false);}
   assert.equal(classify({label:'Cover letter',type:'file'}),null);
   assert.equal(classify({label:'Upload resume',type:'file'}),'resume');
   assert.equal(canDraft({label:'Why this company?',tag:'textarea'}),true);

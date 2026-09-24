@@ -1,4 +1,5 @@
-import {profileFields} from './matching.js';
+import {educationFields,preferenceFields,yesNoFields,inferEducation} from './profile-schema.js';
+import {profileFields,allProfileFields} from './matching.js';
 import {projectEditor} from './project-editor.js';
 import {extractResume} from './resume.js';
 import {parseProfileImport} from './profile-import.js';
@@ -6,17 +7,18 @@ const $ = id => document.getElementById(id);
 let savedResume;
 const projects=projectEditor($('projects'),report);
 $('addProject').onclick=()=>{try{projects.add();}catch(error){report(error);}};
-for (const [key,label] of Object.entries(profileFields)) {
-  const wrap=document.createElement('div'), l=document.createElement('label'), input=document.createElement('input');
+for (const [key,label] of Object.entries(allProfileFields)) {
+  const wrap=document.createElement('div'), l=document.createElement('label'), input=document.createElement(yesNoFields.includes(key)?'select':'input');
+  if(yesNoFields.includes(key))for(const v of ['', 'Yes','No']){const o=document.createElement('option');o.value=v;o.textContent=v || 'Not saved';input.append(o);}
   l.htmlFor=key; l.textContent=label; input.id=key; input.maxLength=500;
-  input.type=key==='email'?'email':['linkedin','github','website'].includes(key)?'url':key==='phone'?'tel':'text';
-  wrap.append(l,input); $('profileFields').append(wrap);
+  if(!yesNoFields.includes(key))input.type=key==='email'?'email':['linkedin','github','website'].includes(key)?'url':key==='phone'?'tel':'text';
+  wrap.append(l,input); $(key in educationFields?'educationFields':key in preferenceFields?'preferenceFields':'profileFields').append(wrap);
 }
 async function load() {
   const {profile={},resume,model='gpt-5-mini'}=await chrome.storage.local.get(['profile','resume','model']);
   savedResume=resume;
   projects.set(profile.projects || []);
-  for (const key of [...Object.keys(profileFields),'background','goals']) $(key).value=profile[key] || '';
+  for (const key of [...Object.keys(allProfileFields),'background','goals']) $(key).value=profile[key] || '';
   $('model').value=model; $('resumeName').textContent=resume?.name || 'No resume saved.';
   const {apiKey}=await chrome.storage.session.get('apiKey');
   $('keyState').textContent=apiKey?'A key is available for this session. Leave blank to keep it.':'No key saved. Your key clears when Chrome closes.';
@@ -25,7 +27,7 @@ function report(error) {$('status').textContent=error.message;}
 $('profileForm').addEventListener('submit', async e => {
   e.preventDefault();
   try {
-    const profile=Object.fromEntries([...Object.keys(profileFields),'background','goals'].map(k=>[k,$(k).value.trim()]));
+    const profile=Object.fromEntries([...Object.keys(allProfileFields),'background','goals'].map(k=>[k,$(k).value.trim()]));
     profile.projects=projects.read();
     const file=$('resume').files[0];
     let resume=savedResume;
@@ -66,4 +68,5 @@ $('profileImport').onchange=async()=>{
     $('status').textContent='Import ready to review. Click Save profile to apply it. Your API key has not changed.';
   }catch(error){report(error);}finally{$('profileImport').value='';}
 };
+$('useEducation').onclick=()=>{const inferred=inferEducation($('background').value);for(const [key,value] of Object.entries(inferred))if(!$(key).value)$(key).value=value;$('status').textContent='Education details added where recognized. Review dates and school, then Save profile.';};
 load().catch(report);

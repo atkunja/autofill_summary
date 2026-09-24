@@ -1,4 +1,4 @@
-import {classify,suggestion,canDraft,isSensitive} from './matching.js';
+import {classify,suggestion,canDraft,isSensitive,savedFieldKey,fallbackValues} from './matching.js';
 const $=id=>document.getElementById(id);
 let tabId, pageUrl, rows=[], resume;
 const status=text=>$('status').textContent=text;
@@ -8,7 +8,8 @@ function render(field, profile) {
   const card=make('div');card.className='field';
   const label=make('label'), check=make('input');check.type='checkbox';
   const kind=classify(field), value=suggestion(field,profile);
-  const eligible=!field.value && !isSensitive(field.label);
+  const savedDisclosure=isSensitive(field.label)&&savedFieldKey(field)&&!!value;
+  const eligible=!field.value && (!isSensitive(field.label)||savedDisclosure);
   check.checked=eligible && !!(value || (kind==='resume' && resume));
   check.disabled=!eligible;
   label.append(check,document.createTextNode(' '+field.label));card.append(label);
@@ -16,10 +17,10 @@ function render(field, profile) {
   if (kind==='resume') {
     card.append(make('small',field.value?`Already attached: ${field.value}`:resume?resume.name:'Save a resume in Profile first.'));
     if(!resume)check.disabled=true;
-  } else if(field.type==='file' || isSensitive(field.label)) {
-    check.disabled=true;card.append(make('small','Complete this field directly on the application.'));
+  } else if(field.type==='file' || (isSensitive(field.label)&&!savedDisclosure)) {
+    check.disabled=true;card.append(make('small','Save an explicit answer in Profile or complete this field manually.'));
   } else {
-    editor=make(field.options?'select':'textarea');editor.setAttribute('aria-label',`Value for ${field.label}`);
+    editor=make(field.options?'select':field.tag==='textarea'?'textarea':'input');editor.setAttribute('aria-label',`Value for ${field.label}`);
     if(field.options)for(const option of field.options){const o=make('option',option.label);o.value=option.value;o.disabled=option.disabled;editor.append(o);}
     editor.value=field.value || value;editor.disabled=!eligible;
     if(field.maxLength)editor.maxLength=field.maxLength;
@@ -40,7 +41,7 @@ function render(field, profile) {
       const actions=make('div');actions.className='actions';actions.append(button);card.append(actions);
     }
   }
-  $('fields').append(card);rows.push({field,check,editor,kind});
+  $('fields').append(card);rows.push({field,check,editor,kind,profile});
 }
 $('scan').onclick=async()=>{
   $('scan').disabled=true;rows=[];$('fields').replaceChildren();$('fill').hidden=true;
@@ -50,6 +51,8 @@ $('scan').onclick=async()=>{
     tabId=tab.id;pageUrl=tab.url;
     await chrome.scripting.executeScript({target:{tabId},files:['content.js']});
     const result=await chrome.tabs.sendMessage(tabId,{type:'scan'});
+    if(result.error)throw Error(result.error);
+    if(!$('context').value.trim()&&result.context)$('context').value=result.context;
     const saved=await chrome.storage.local.get(['profile','resume']);resume=saved.resume;
     $('pageInfo').textContent=`${new URL(result.url).hostname} · ${result.fields.length} fields found`;
     for(const field of result.fields)render(field,saved.profile || {});
@@ -58,15 +61,17 @@ $('scan').onclick=async()=>{
   } catch(error){status(error.message);}finally{$('scan').disabled=false;}
 };
 $('fill').onclick=async()=>{
-  $('fill').disabled=true;
+  $('fill').disabled=true;$('scan').disabled=true;
   try {
     const tab=await chrome.tabs.get(tabId);
     if(tab.url!==pageUrl)throw Error('The page changed. Scan the application again.');
-    const items=rows.filter(r=>r.check.checked && !r.check.disabled).map(r=>({id:r.field.id,kind:r.kind,value:r.editor?.value || ''}));
+    status('Filling selected fields and verifying dropdown selections…');
+    const items=rows.filter(r=>r.check.checked && !r.check.disabled).map(r=>({id:r.field.id,kind:r.kind,value:r.editor?.value || '',alternatives:fallbackValues(r.kind,r.editor?.value || '',r.profile)}));
     if(!items.length)throw Error('Select at least one field to fill.');
     const result=await chrome.tabs.sendMessage(tabId,{type:'apply',items,resume:items.some(i=>i.kind==='resume')?resume:null});
+    if(result.error)throw Error(result.error);
     const successes=result.results.filter(r=>r.ok);
-    for(const r of rows)if(successes.some(s=>s.id===r.field.id)){r.check.checked=false;r.check.disabled=true;if(r.editor)r.editor.disabled=true;}
+    for(const r of rows)if(successes.some(s=>s.id===r.field.id)){r.check.checked=false;r.check.disabled=true;if(r.editor){r.editor.disabled=true;const chosen=successes.find(s=>s.id===r.field.id)?.selectedValue;if(chosen)r.editor.value=chosen;}}
     status(`Filled ${successes.length} of ${items.length} selected fields. Review the application before submitting.` + result.results.filter(r=>!r.ok).map(r=>`\n${rows.find(row=>row.field.id===r.id)?.field.label}: ${r.reason}`).join(''));
-  }catch(error){status(error.message);}finally{$('fill').disabled=false;}
+  }catch(error){status(error.message);}finally{$('fill').disabled=false;$('scan').disabled=false;}
 };
