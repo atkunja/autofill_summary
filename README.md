@@ -7,7 +7,7 @@ A personal-use Chrome extension that fills repetitive job application fields and
 1. Clone this repository or download and unzip it.
 2. Open `chrome://extensions` and enable **Developer mode**.
 3. Click **Load unpacked** and select the **extension** folder inside this repository.
-4. Pin **Apply, personally** in Chrome's toolbar. Open it and click **Profile ↗**.
+4. Pin **Apply, personally** in Chrome's toolbar. Click its toolbar icon to open the persistent side panel, then click **Profile ↗**.
 5. Save your contact details, resume attachment, resume text, and career goals.
 6. On an application page, click the toolbar icon, choose **Scan this application**, review the suggestions, then **Fill selected fields**.
 
@@ -22,6 +22,16 @@ Paste the relevant company / role description into **Context for better answers*
 Read and edit the draft, then select its checkbox before filling. The prompt varies wording while grounding claims in your supplied facts; it may ask for missing information. Check every draft for accuracy. The extension does not research the company or invent reasons you want to work there.
 
 Uses the [OpenAI Responses API](https://developers.openai.com/api/docs/guides/text) with `store: false`. This setting does not promise zero provider retention; see [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data).
+
+## Education and saved disclosures
+
+Profile now includes **Education** and **Saved application answers**. Education values take priority over conservative resume-text recognition. Use **Use education from resume text** to review recognized values in the editor; it does not invent missing start dates. Save a campus-specific school name if the application distinguishes campuses.
+
+For a month/year graduation cutoff, the extension compares the saved graduation month/year directly. A strict "before" question in the same month stays unanswered because the exact day is unknown. Internship and US authorization/sponsorship questions use your explicit saved Yes/No answers. Age 18+ does not imply an exact age or date of birth. "Not a protected veteran" is not treated as "never served in the military."
+
+Voluntary disclosures remain local until you select them for filling on an application. They are excluded from AI prompt fields. Existing application answers are preserved, even when they differ from saved preferences. Leave any preference blank to keep completing it manually. Consent checkboxes are never clicked.
+
+For Greenhouse-style pages with an **Apply for this job** heading, the scan can copy the preceding job description into the review panel's context box. That text is sent only when you request an AI draft; review it first. The form's answers are excluded from this automatic job-context capture.
 
 ## Resume and project knowledge
 
@@ -46,11 +56,14 @@ Keep personal imports under the ignored `private/` directory, never in Git. A pr
 - Visible native resume file inputs accepting your saved PDF, DOC, DOCX, or TXT file, up to 4 MB.
 - Standard inputs and textareas, accessible labels, autocomplete attributes, and open shadow roots.
 - Editable previews, character-limit checks, input/change events, and protection against overwriting existing entries.
-- Manual completion for sensitive demographic, work authorization, salary, consent, and similar questions.
+- Saved explicit answers for gender, race, Hispanic/Latino identity, veteran status, age 18+, internship preference, US work authorization, and sponsorship. Unset disclosures are never inferred or sent to AI. Salary, consent, and other unsupported sensitive questions stay manual.
+- Structured school, degree, discipline, start/graduation dates, and deterministic graduation-cutoff answers.
+- Searchable React Select / Greenhouse-style dropdowns, native radio groups, and numeric year fields. Dropdown selections are verified, and existing selections are preserved.
+- Engineering is an explicit broader fallback for engineering majors when the exact discipline is absent. The selected category is shown in the review panel.
 
-**Compatibility is best effort, not universal.** Cross-origin iframes, closed shadow roots, custom dropdown widgets, hidden upload inputs, and unusual ATS controls may need manual entry. No site-specific certification for Workday, Greenhouse, Lever, or other ATS products is claimed. Scan each new step of a multi-step form. The extension neither checks consent boxes nor submits applications. A website may immediately upload or autosave a value after you fill it; review the destination before filling.
+**Compatibility is best effort, not universal.** Cross-origin iframes, closed shadow roots, unsupported custom widgets, hidden upload inputs, and unusual ATS controls may need manual entry. Greenhouse React Select behavior is covered with an actual React Select integration fixture. This is not a claim that every Greenhouse form or ATS is supported. Scan each new step of a multi-step form. The extension neither checks consent boxes nor submits applications. A website may immediately upload or autosave a value after you fill it; review the destination before filling.
 
-Keep the popup open while reviewing / generating answers. Closing it discards unsaved previews and job context. Your saved profile and resume persist. Chrome internal pages and the Chrome Web Store cannot be filled. If a field changes or the page navigates, scan again.
+The side panel stays open while dropdowns focus the application. Keep it open while reviewing or generating answers; closing it discards unsaved previews and job context. Your saved profile and resume persist. Chrome internal pages and the Chrome Web Store cannot be filled. If a field changes or the page navigates, scan again.
 
 ## Privacy and personal use
 
@@ -59,7 +72,7 @@ The source code is public; your profile is not. Each local installation uses its
 - Contact details, resume, and experience use `chrome.storage.local`, not sync storage. They are not encrypted by this extension.
 - The API key uses `chrome.storage.session`, restricted to trusted extension contexts.
 - Content scripts cannot read either storage area. Only selected values and, when selected, the resume are passed to the application page.
-- The extension accesses the active site only after your toolbar interaction; it has no permanent all-sites permission.
+- The extension uses Chrome’s `sidePanel` permission to keep its review UI open. It accesses the active site only after your toolbar interaction; it has no permanent all-sites permission.
 - The sole initial permanent host permission is `https://api.openai.com/*` for explicit AI requests. Project imports declare optional HTTPS host access; clicking **Read project link** requests only that source origin (the GitHub API origin for repository READMEs). Granted permissions persist until revoked in Chrome. Clearing saved data does not revoke site permissions. Fetches omit cookies and credentials, reject redirects, and never include your OpenAI key.
 - No analytics, remote executable code, or third-party backend. PDF.js and its worker are bundled locally.
 - **Forget API key**, **Remove saved resume**, and **Erase all saved data** are available in Profile. Erasing local data does not retract fields already sent to employers or requests sent to OpenAI.

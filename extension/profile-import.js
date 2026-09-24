@@ -1,10 +1,10 @@
-import {profileFields} from './matching.js';
+import {allProfileFields} from './matching.js';
 import {cleanProjects} from './projects.js';
 export function parseProfileImport(raw) {
   const data=JSON.parse(raw);
   if(data?.version!==1 || !data.profile || typeof data.profile!=='object' || Array.isArray(data.profile))throw Error('Choose an Apply, personally profile JSON (version 1).');
   const profile={};
-  for(const key of [...Object.keys(profileFields),'background','goals']){
+  for(const key of [...Object.keys(allProfileFields),'background','goals']){
     if(data.profile[key]!==undefined){if(typeof data.profile[key]!=='string')throw Error(`Invalid profile field: ${key}.`);profile[key]=data.profile[key].slice(0,key==='background'?16000:key==='goals'?4000:500);}
   }
   if(data.profile.projects!==undefined)profile.projects=cleanProjects(data.profile.projects);

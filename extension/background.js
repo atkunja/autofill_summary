@@ -1,3 +1,4 @@
+chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:true}).catch(()=>{});
 import {draftAnswer} from './ai.js';
 // Profile and session credentials are unavailable to injected content scripts.
 const ready = Promise.all([

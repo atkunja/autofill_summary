@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Apply, personally",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Your details, your voice. Review job application autofills and optional AI drafts.",
   "minimum_chrome_version": "119",
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://api.openai.com/*"
@@ -17,7 +18,6 @@
     "type": "module"
   },
   "action": {
-    "default_popup": "popup.html",
     "default_title": "Apply, personally"
   },
   "options_page": "options.html",
@@ -26,5 +26,8 @@
   },
   "optional_host_permissions": [
     "https://*/*"
-  ]
+  ],
+  "side_panel": {
+    "default_path": "popup.html"
+  }
 }
