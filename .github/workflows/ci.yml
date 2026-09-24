@@ -19,6 +19,12 @@ jobs:
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ats-fixture-evidence
+          path: test-results/ats-fixtures.json
+          if-no-files-found: ignore
       - name: Package unpacked extension
         run: cd extension && zip -r ../apply-personally.zip .
       - uses: actions/upload-artifact@v4
