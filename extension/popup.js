@@ -28,7 +28,7 @@ function render(field, profile) {
     else if(canDraft(field)) {
       const button=make('button','Generate AI draft');button.type='button';
       button.onclick=async()=>{
-        button.disabled=true;status('Drafting with your experience, goals, question, and supplied job context…');
+        button.disabled=true;status('Drafting with your resume, enabled projects, goals, question, and supplied job context…');
         try {
           const result=await chrome.runtime.sendMessage({type:'draft',args:{question:field.label,context:$('context').value,maxLength:field.maxLength}});
           if(!result)throw Error('Could not reach the extension. Reload it and try again.');
